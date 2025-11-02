@@ -1,0 +1,7 @@
+flask==2.3.3
+kaggle
+python-dotenv==1.0.1
+kagglehub
+nbformat>=5.10.4
+nbconvert>=7.16.4
+functions-framework>=3.5.0

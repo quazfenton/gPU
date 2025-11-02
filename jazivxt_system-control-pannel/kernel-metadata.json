@@ -1,0 +1,19 @@
+{
+  "id": "jazivxt/system-control-pannel",
+  "id_no": 97511144,
+  "title": "System Control Pannel",
+  "code_file": "system-control-pannel.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": [],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [
+    "google-code-golf-2025"
+  ],
+  "model_sources": []
+}

@@ -21,26 +21,26 @@ Quickstart
    - Or create a .env in this folder with KAGGLE_USERNAME and KAGGLE_KEY
 
 3) Validate
-   python kaggle.py --validate
+   python runna.py --validate
    # Expect: Setup validation passed!
 
 4) Run and deploy in one go (example)
-   python kaggle.py run USER/NOTEBOOK --deploy --gcp-project YOUR_PROJECT_ID --save-name my-func
+   python runna.py run USER/NOTEBOOK --deploy --gcp-project YOUR_PROJECT_ID --save-name my-func
 
 5) Call your function later
-   - List stored endpoints: python kaggle.py endpoints
-   - Call by name: python kaggle.py call my-func --json '{"features": [[1,2,3]]}'
+   - List stored endpoints: python runna.py endpoints
+   - Call by name: python runna.py call my-func --json '{"features": [[1,2,3]]}'
 
 Commands
-- List kernels: python kaggle.py list [--user USER]
-- Pull kernel: python kaggle.py pull USER/NOTEBOOK [--dest DIR]
+- List kernels: python runna.py list [--user USER]
+- Pull kernel: python runna.py pull USER/NOTEBOOK [--dest DIR]
 - Create kernel from local/remote:
-  - python kaggle.py create /abs/or/rel/path/to/notebook.ipynb
-  - python kaggle.py create https://github.com/owner/repo/blob/main/path/to/nb.ipynb
+  - python runna.py create /abs/or/rel/path/to/notebook.ipynb
+  - python runna.py create https://github.com/owner/repo/blob/main/path/to/nb.ipynb
 - Run kernel (and optionally deploy):
-  - python kaggle.py run USER/NOTEBOOK --deploy [GCP OPTIONS]
-  - python kaggle.py run https://kaggle.com/code/user/notebook --deploy [GCP OPTIONS]
-  - python kaggle.py run /path/to/notebook.ipynb --deploy [GCP OPTIONS]
+  - python runna.py run USER/NOTEBOOK --deploy [GCP OPTIONS]
+  - python runna.py run https://kaggle.com/code/user/notebook --deploy [GCP OPTIONS]
+  - python runna.py run /path/to/notebook.ipynb --deploy [GCP OPTIONS]
 
 GCP options (usable with run --deploy and deploy)
 - --gcp-project YOUR_PROJECT_ID
@@ -52,10 +52,10 @@ GCP options (usable with run --deploy and deploy)
 - --save-name friendly name for the endpoint registry
 
 Deploy existing dir
-- python kaggle.py deploy ./dir-with-ipynb [GCP OPTIONS]
+- python runna.py deploy ./dir-with-ipynb [GCP OPTIONS]
 
 AWS packaging
-- python kaggle.py package-aws ./dir-with-ipynb
+- python runna.py package-aws ./dir-with-ipynb
   # Produces aws-lambda.zip and aws-lambda/ with lambda_function.py
   # Example AWS CLI deploy:
   # aws lambda create-function --function-name my-func \
@@ -66,17 +66,17 @@ AWS packaging
 
 Local serving (dev/test)
 - Package and run locally:
-  python kaggle.py serve-local ./dir-with-ipynb --run --port 8080
+  python runna.py serve-local ./dir-with-ipynb --run --port 8080
 - Then send a request:
   curl -X POST -H 'Content-Type: application/json' \
        -d '{"features": [[1,2,3]]}' http://localhost:8080/
 
 Endpoint registry and calling
 - Save-name during deployment stores the function URL (if parsed) in .kaggle_state/endpoints.json
-- List: python kaggle.py endpoints
+- List: python runna.py endpoints
 - Call:
-  - python kaggle.py call my-func --json '{"features": [[1,2,3]]}'
-  - python kaggle.py call https://your-func-url --json-file payload.json
+  - python runna.py call my-func --json '{"features": [[1,2,3]]}'
+  - python runna.py call https://your-func-url --json-file payload.json
 
 Model integration
 - If deploy_model.py exists in this folder or the notebook folder:
@@ -88,18 +88,18 @@ Model integration
 Troubleshooting
 - gcloud --source errors: We now run gcloud with cwd=deploy/ and use --source .
 - Credentials: If .env isn’t loading in your shell, the script loads it directly with override=True.
-- KaggleApi shadowing: If you plan to import kaggle.* modules from Python code in this directory, rename kaggle.py to avoid shadowing the package.
+- KaggleApi shadowing: If you plan to import kaggle.* modules from Python code in this directory, rename runna.py to avoid shadowing the package.
 - Check environment:
-  python kaggle.py doctor
+  python runna.py doctor
 
 Security
 - Never commit your secrets. The CLI uses environment variables and loads .env only locally.
 - For runtime secrets on GCF/AWS, prefer secret managers or environment variables set in the platform.
-    
+
     # If credentials are still not found, raise error
     if not username or not key:
         raise RuntimeError("KAGGLE_USERNAME/KAGGLE_KEY not set in environment or .env file")
-    
+
     return (username, key)
 
 # ----------------------------

@@ -92,6 +92,35 @@ modal token new
 
 ## 📖 Usage Examples
 
+### App Library (Quick Deploy)
+
+**List available apps:**
+```bash
+python3 runna.py app-list
+```
+
+**Deploy pre-built app:**
+```bash
+# Image classifier with GPU
+python3 runna.py app-deploy image-classifier
+
+# Text generator
+python3 runna.py app-deploy text-generator --gpu A10G
+
+# Web scraper (no GPU)
+python3 runna.py app-deploy web-scraper
+```
+
+**Add custom app:**
+```bash
+python3 runna.py app-add my-app \
+  --file my_app.py \
+  --description "My custom app" \
+  --gpu T4
+```
+
+See [APP_LIBRARY.md](APP_LIBRARY.md) for complete app library documentation.
+
 ### Basic Notebook Operations
 
 **List your kernels:**
@@ -156,8 +185,23 @@ python3 runna.py deploy-aws ./notebook-dir \
 
 **Deploy to Modal.com:**
 ```bash
+# Basic deployment
 python3 runna.py deploy-modal ./notebook-dir \
   --save-name my-modal-endpoint
+
+# With GPU support
+python3 runna.py deploy-modal ./notebook-dir \
+  --gpu A10G \
+  --save-name my-gpu-endpoint
+
+# With secrets and custom timeout
+python3 runna.py deploy-modal ./notebook-dir \
+  --gpu T4 \
+  --secrets api-key db-credentials \
+  --timeout 600 \
+  --save-name production-model
+
+# Available GPU types: T4, A10G, A100
 ```
 
 **Test Locally:**
@@ -399,7 +443,17 @@ python3 runna.py deploy-aws ./notebook \
 | Free Tier | 2M requests/mo | 1M requests/mo | $30/mo credit |
 | Python Versions | 3.7-3.11 | 3.8-3.12 | Latest |
 | Max Package Size | 500MB | 250MB | 10GB+ |
-| GPU Support | ❌ | ❌ | ✅ |
+| GPU Support | ❌ | ❌ | ✅ T4/A10G/A100 |
+| Secrets Management | ✅ | ✅ | ✅ |
+| Persistent Storage | ❌ | ❌ | ✅ Volumes |
+| Scheduled Functions | ✅ | ✅ | ✅ |
+
+### Modal.com Advantages
+- **GPU Support**: T4 ($0.60/hr), A10G ($1.10/hr), A100 ($4.00/hr)
+- **No Timeout Limits**: Run long-running tasks
+- **Large Packages**: Deploy models up to 10GB+
+- **Persistent Volumes**: Cache models between invocations
+- **Modern Python**: Always latest Python version
 
 ## 🤝 Contributing
 

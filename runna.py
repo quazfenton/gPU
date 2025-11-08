@@ -1939,9 +1939,10 @@ def deploy_to_aws_lambda(notebook_dir, opts: dict | None = None):
         return False, None, None
 
 
-def package_for_modal(notebook_dir: Path) -> Path:
+def package_for_modal(notebook_dir: Path, opts: dict = None) -> Path:
     """Package notebook for Modal.com deployment. Returns deploy dir path."""
     notebook_dir = Path(notebook_dir)
+    opts = opts or {}
     nb_files = list(notebook_dir.glob("*.ipynb")) or list(notebook_dir.rglob("*.ipynb"))
     if not nb_files:
         raise RuntimeError("No notebook file found for Modal packaging")
@@ -1956,7 +1957,7 @@ def package_for_modal(notebook_dir: Path) -> Path:
 
     # Create Modal app file
     modal_app = deploy_dir / "modal_app.py"
-    create_modal_app(modal_app, nb_script)
+    create_modal_app(modal_app, nb_script, opts)
 
     # Include helper
     for helper in ["deploy_model.py"]:
@@ -1973,20 +1974,31 @@ def package_for_modal(notebook_dir: Path) -> Path:
     return deploy_dir
 
 
-def create_modal_app(modal_py: Path, notebook_script: str):
-    """Create Modal.com app file from notebook code."""
+def create_modal_app(modal_py: Path, notebook_script: str, opts: dict = None):
+    """Create Modal.com app file from notebook code with GPU/secrets support."""
+    opts = opts or {}
+    gpu = opts.get("gpu", "None")
+    secrets = opts.get("secrets", [])
+    timeout = opts.get("timeout", 300)
+    
+    secrets_str = f"[{', '.join([f'modal.Secret.from_name(\"{s}\")' for s in secrets])}]" if secrets else "[]"
+    
     template = '''"""
 Modal.com app generated from Kaggle notebook.
 Install: pip install modal
 Deploy: modal deploy modal_app.py
+Run: modal run modal_app.py
 """
 import modal
-import json
 
-# Create Modal app
 app = modal.App("kaggle-notebook")
 
-# Optional model import
+image = modal.Image.debian_slim().pip_install(
+    "numpy", "pandas", "scikit-learn", "requests"
+)
+
+volume = modal.Volume.from_name("model-cache", create_if_missing=True)
+
 try:
     import deploy_model as _deploy_model
     _HAS_MODEL = True
@@ -1994,10 +2006,15 @@ except Exception:
     _deploy_model = None
     _HAS_MODEL = False
 
-# Notebook code
 {notebook_code}
 
-@app.function()
+@app.function(
+    image=image,
+    gpu={gpu},
+    secrets={secrets},
+    volumes={{"/cache": volume}},
+    timeout={timeout},
+)
 @modal.web_endpoint(method="POST")
 def predict(data: dict):
     """Modal web endpoint for predictions."""
@@ -2015,26 +2032,31 @@ def predict(data: dict):
     except Exception as e:
         return {{"error": str(e)}}, 500
 
-@app.function()
+@app.function(image=image)
 @modal.web_endpoint(method="GET")
 def health():
     """Health check endpoint."""
     return {{"status": "ok", "message": "Kaggle notebook API is running"}}
 
-if __name__ == "__main__":
-    # For local testing
-    print("To deploy: modal deploy modal_app.py")
-    print("To run locally: modal serve modal_app.py")
+@app.local_entrypoint()
+def main():
+    print("Deploy: modal deploy modal_app.py")
+    print("Serve: modal serve modal_app.py")
 '''
 
     modal_py.write_text(
-        template.format(notebook_code=notebook_script), encoding="utf-8"
+        template.format(
+            notebook_code=notebook_script,
+            gpu=gpu,
+            secrets=secrets_str,
+            timeout=timeout
+        ), encoding="utf-8"
     )
     logger.info(f"Created Modal app: {modal_py}")
 
 
 def deploy_to_modal(notebook_dir, opts: dict | None = None):
-    """Deploy notebook to Modal.com."""
+    """Deploy notebook to Modal.com with GPU/secrets support."""
     notebook_dir = Path(notebook_dir)
     opts = opts or {}
 
@@ -2049,7 +2071,7 @@ def deploy_to_modal(notebook_dir, opts: dict | None = None):
             return False, None
 
         # Package for Modal
-        deploy_dir = package_for_modal(notebook_dir)
+        deploy_dir = package_for_modal(notebook_dir, opts)
         modal_app = deploy_dir / "modal_app.py"
 
         if not modal_app.exists():
@@ -2140,7 +2162,7 @@ def cmd_deploy_aws(args):
 
 
 def cmd_deploy_modal(args):
-    """Deploy notebook to Modal.com command."""
+    """Deploy notebook to Modal.com command with GPU/secrets support."""
     path = Path(args.path)
 
     if not path.exists():
@@ -2148,13 +2170,18 @@ def cmd_deploy_modal(args):
         return
 
     try:
-        success, url = deploy_to_modal(path)
+        opts = {
+            "gpu": getattr(args, "gpu", None),
+            "secrets": getattr(args, "secrets", []),
+            "timeout": getattr(args, "timeout", 300),
+        }
+        success, url = deploy_to_modal(path, opts)
         if success:
             logger.info("Modal.com deployment completed!")
             if url and getattr(args, "save_name", None):
                 try:
                     register_endpoint(
-                        args.save_name, url, provider="modal", metadata={}
+                        args.save_name, url, provider="modal", metadata=opts
                     )
                 except Exception as reg_e:
                     logger.warning(f"Could not register endpoint: {reg_e}")
@@ -2162,6 +2189,117 @@ def cmd_deploy_modal(args):
             logger.error("Modal deployment failed")
     except Exception as e:
         logger.error(f"Deploy to Modal failed: {e}")
+
+
+def cmd_app_list(args):
+    """List apps in library."""
+    from app_library import list_apps
+    apps = list_apps()
+    if not apps:
+        print("No apps in library. Use 'app-add' to add apps.")
+        return
+    
+    print(f"\n{'Name':<20} {'GPU':<10} {'Deployed':<15} {'Description'}")
+    print("-" * 80)
+    for name, info in apps.items():
+        gpu = info.get('gpu', 'None')
+        deployed = '✓' if info.get('deployed') else '✗'
+        desc = info.get('description', '')[:40]
+        print(f"{name:<20} {gpu:<10} {deployed:<15} {desc}")
+
+
+def cmd_app_show(args):
+    """Show app code."""
+    from app_library import get_app, list_apps
+    code = get_app(args.name)
+    if not code:
+        logger.error(f"App not found: {args.name}")
+        return
+    
+    apps = list_apps()
+    info = apps.get(args.name, {})
+    print(f"\n# {args.name}")
+    print(f"# {info.get('description', '')}")
+    print(f"# GPU: {info.get('gpu', 'None')}")
+    print(f"# Tags: {', '.join(info.get('tags', []))}\n")
+    print(code)
+
+
+def cmd_app_deploy(args):
+    """Deploy app from library."""
+    from app_library import get_app, update_app, list_apps
+    
+    code = get_app(args.name)
+    if not code:
+        logger.error(f"App not found: {args.name}")
+        return
+    
+    # Write to temp file
+    temp_dir = Path(f"/tmp/app_{args.name}")
+    temp_dir.mkdir(exist_ok=True)
+    app_file = temp_dir / "app.py"
+    app_file.write_text(code)
+    
+    # Get app info for GPU setting
+    apps = list_apps()
+    info = apps.get(args.name, {})
+    gpu = getattr(args, "gpu", None) or info.get("gpu")
+    
+    # Deploy
+    opts = {
+        "gpu": gpu,
+        "secrets": getattr(args, "secrets", []),
+        "timeout": getattr(args, "timeout", 300),
+    }
+    
+    success, url = deploy_to_modal(temp_dir, opts)
+    if success and url:
+        update_app(args.name, deployed_url=url)
+        logger.info(f"App deployed: {url}")
+    else:
+        logger.error("Deployment failed")
+
+
+def cmd_app_add(args):
+    """Add app to library."""
+    from app_library import add_app
+    
+    if args.file:
+        code = Path(args.file).read_text()
+    else:
+        logger.error("Must provide --file")
+        return
+    
+    add_app(
+        args.name,
+        code,
+        description=getattr(args, "description", ""),
+        tags=getattr(args, "tags", []),
+        gpu=getattr(args, "gpu", None)
+    )
+    logger.info(f"Added app: {args.name}")
+
+
+def cmd_app_update(args):
+    """Update app in library."""
+    from app_library import update_app
+    
+    if args.file:
+        code = Path(args.file).read_text()
+        update_app(args.name, code=code)
+        logger.info(f"Updated app: {args.name}")
+    else:
+        logger.error("Must provide --file")
+
+
+def cmd_app_delete(args):
+    """Delete app from library."""
+    from app_library import delete_app
+    
+    if delete_app(args.name):
+        logger.info(f"Deleted app: {args.name}")
+    else:
+        logger.error(f"App not found: {args.name}")
 
 
 def cmd_serve_local(args):
@@ -2705,9 +2843,50 @@ Examples:
         "path", help="Path to notebook file or directory containing notebook"
     )
     modal_deploy_parser.add_argument(
+        "--gpu", help="GPU type: T4, A10G, A100, or None (default: None)"
+    )
+    modal_deploy_parser.add_argument(
+        "--secrets", nargs="*", default=[], help="Modal secret names to attach"
+    )
+    modal_deploy_parser.add_argument(
+        "--timeout", type=int, default=300, help="Function timeout in seconds (default: 300)"
+    )
+    modal_deploy_parser.add_argument(
         "--save-name", help="Save endpoint under this name for later use"
     )
     modal_deploy_parser.set_defaults(func=cmd_deploy_modal)
+
+    # App library commands
+    app_list_parser = subparsers.add_parser("app-list", help="List apps in library")
+    app_list_parser.set_defaults(func=cmd_app_list)
+
+    app_show_parser = subparsers.add_parser("app-show", help="Show app code")
+    app_show_parser.add_argument("name", help="App name")
+    app_show_parser.set_defaults(func=cmd_app_show)
+
+    app_deploy_parser = subparsers.add_parser("app-deploy", help="Deploy app from library")
+    app_deploy_parser.add_argument("name", help="App name")
+    app_deploy_parser.add_argument("--gpu", help="GPU type override")
+    app_deploy_parser.add_argument("--secrets", nargs="*", default=[])
+    app_deploy_parser.add_argument("--timeout", type=int, default=300)
+    app_deploy_parser.set_defaults(func=cmd_app_deploy)
+
+    app_add_parser = subparsers.add_parser("app-add", help="Add app to library")
+    app_add_parser.add_argument("name", help="App name")
+    app_add_parser.add_argument("--file", required=True, help="App file path")
+    app_add_parser.add_argument("--description", help="App description")
+    app_add_parser.add_argument("--tags", nargs="*", default=[])
+    app_add_parser.add_argument("--gpu", help="Default GPU type")
+    app_add_parser.set_defaults(func=cmd_app_add)
+
+    app_update_parser = subparsers.add_parser("app-update", help="Update app in library")
+    app_update_parser.add_argument("name", help="App name")
+    app_update_parser.add_argument("--file", required=True, help="App file path")
+    app_update_parser.set_defaults(func=cmd_app_update)
+
+    app_delete_parser = subparsers.add_parser("app-delete", help="Delete app from library")
+    app_delete_parser.add_argument("name", help="App name")
+    app_delete_parser.set_defaults(func=cmd_app_delete)
 
     # Local serve command (Jupyter/local dev support)
     serve_parser = subparsers.add_parser(

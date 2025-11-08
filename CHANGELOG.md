@@ -1,16 +1,4 @@
-# Changelog
-
-All notable changes to the Kaggle Notebook Automation Tool will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [2.0.0] - 2025-11-02
-
-### 🔥 Critical Fixes
-
-#### Fixed: Jupyter Magic Commands Causing Deployment Failures
-
+11-02-25
 **Issue:** Notebooks containing Jupyter/IPython magic commands would fail during deployment with syntax errors. Commands like `%%writefile`, `%matplotlib`, `%load_ext`, and `get_ipython()` calls are not valid Python and caused build failures.
 
 **Impact:**
@@ -229,101 +217,6 @@ python3 runna.py endpoints
 python3 runna.py call my-api --json '{"data": "test"}'
 ```
 
-### 🔧 Improvements
-
-#### 1. Better Notebook Conversion
-- Added fallback extraction method when nbconvert fails
-- Improved error messages
-- Better handling of mixed cell types
-- Preserved code structure and formatting
-
-#### 2. Dependency Detection
-Enhanced automatic dependency detection:
-- torch / pytorch
-- scikit-learn
-- numpy
-- pandas
-- requests
-- kagglehub
-- huggingface_hub
-- python-dotenv
-
-#### 3. Error Handling
-- More descriptive error messages
-- Better stack traces in debug mode
-- Graceful fallbacks for missing tools
-- Improved validation checks
-
-#### 4. Code Quality
-- Formatted entire codebase with black/autopep8
-- Fixed inconsistent spacing and indentation
-- Removed duplicate code
-- Improved function documentation
-- Added type hints where appropriate
-
-### 📚 Documentation
-
-#### New Files
-- `README.md` - Comprehensive usage guide with examples
-- `CHANGELOG.md` - This file
-- `examples/simple_api.ipynb` - Example deployable notebook
-
-#### Updated Documentation
-- Added deployment comparison table
-- Common issues and solutions
-- Security best practices
-- Platform-specific instructions
-- API reference for main functions
-
-### 🔄 Changed Behavior
-
-#### Deployment Command
-Now supports multiple platforms:
-```bash
-# Google Cloud Functions (default)
-python3 runna.py deploy ./notebook
-
-# AWS Lambda
-python3 runna.py deploy-aws ./notebook
-
-# Modal.com
-python3 runna.py deploy-modal ./notebook
-```
-
-#### Notebook Conversion
-- Magic commands are now automatically filtered
-- Conversion is more robust with fallbacks
-- Better preservation of code structure
-
-### ⚠️ Breaking Changes
-
-None. All existing commands remain backward compatible.
-
-### 🐛 Bug Fixes
-
-1. **Fixed:** Stray `</text>` tag causing syntax error (line 1398)
-2. **Fixed:** Inconsistent spacing throughout codebase
-3. **Fixed:** Missing error handling in endpoint registry
-4. **Fixed:** Incorrect path handling in Windows
-5. **Fixed:** Race condition in batch processing
-
-### 🔒 Security
-
-- Added security scanning for hardcoded credentials
-- Improved input validation for URLs and paths
-- Better error messages that don't leak sensitive info
-- Environment variable support for all credentials
-
-### 📊 Performance
-
-- Faster notebook conversion (~30% improvement)
-- Reduced memory usage during batch processing
-- Optimized dependency detection
-- Parallel processing support for batch operations
-
-### 🧪 Testing
-
-To test the fixes:
 
 ```bash
 # Test basic functionality
@@ -346,35 +239,14 @@ No new required dependencies. Optional dependencies:
 - `boto3` - For enhanced AWS support (AWS CLI still works)
 - `google-cloud-functions` - For enhanced GCP support
 
-### 🔮 Future Plans
-
 #### Planned for v2.1.0
 - [ ] Azure Functions support
 - [ ] Vercel/Netlify Functions support
 - [ ] Docker container deployment option
-- [ ] Monitoring and logging integration
-- [ ] Cost estimation before deployment
-- [ ] Automatic rollback on failure
 
 #### Under Consideration
 - [ ] Terraform/IaC generation
 - [ ] CI/CD pipeline templates
-- [ ] Integration tests
-- [ ] Performance benchmarking tools
-- [ ] Multi-region deployment
-- [ ] A/B testing support
-
-### 🙏 Acknowledgments
-
-- Kaggle API team for the excellent API
-- nbconvert team for notebook conversion
-- Community feedback on deployment issues
-
-### 📝 Migration Guide
-
-#### From v1.x to v2.0
-
-No breaking changes. Simply update and enjoy new features!
 
 **New commands to try:**
 ```bash
@@ -389,44 +261,3 @@ python3 runna.py deploy ./notebook --save-name my-api
 python3 runna.py call my-api --json '{"test": true}'
 ```
 
-**If you had issues before:**
-- ✅ Magic command errors are now automatically fixed
-- ✅ More platforms available for deployment
-- ✅ Better error messages help debug issues
-- ✅ Endpoint management is now built-in
-
-### 🔗 Links
-
-- [Kaggle API Documentation](https://github.com/Kaggle/kaggle-api)
-- [GCP Functions Docs](https://cloud.google.com/functions/docs)
-- [AWS Lambda Docs](https://docs.aws.amazon.com/lambda/)
-- [Modal Docs](https://modal.com/docs)
-
----
-
-**Full Diff Stats:**
-- Files changed: 1 (runna.py)
-- Lines added: ~800
-- Lines removed: ~50
-- Functions added: 10
-- Functions modified: 5
-- Bug fixes: 6
-- New features: 3
-
-**Tested On:**
-- Python 3.8, 3.9, 3.10, 3.11
-- Ubuntu 20.04, 22.04
-- macOS Ventura, Sonoma
-- Windows 10, 11 (via WSL2)
-
-**Deploy Confidence:** 🟢 High
-- All core functionality tested
-- Backward compatible
-- Comprehensive error handling
-- Detailed documentation
-
-**Upgrade Recommendation:** ✅ Strongly Recommended
-- Fixes critical deployment bugs
-- Adds valuable new features
-- No migration effort required
-- Improved developer experience

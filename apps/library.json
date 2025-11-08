@@ -1,0 +1,44 @@
+{
+  "apps": {
+    "image-classifier": {
+      "file": "image_classifier.py",
+      "description": "Image classification with ResNet50",
+      "tags": ["ml", "vision", "classification"],
+      "gpu": "T4",
+      "created": "2025-11-08T12:19:00",
+      "deployed": null
+    },
+    "text-generator": {
+      "file": "text_generator.py",
+      "description": "Text generation with GPT-2",
+      "tags": ["ml", "nlp", "generation"],
+      "gpu": "T4",
+      "created": "2025-11-08T12:19:00",
+      "deployed": null
+    },
+    "web-scraper": {
+      "file": "web_scraper.py",
+      "description": "Web scraper with BeautifulSoup",
+      "tags": ["scraping", "web"],
+      "gpu": null,
+      "created": "2025-11-08T12:19:00",
+      "deployed": null
+    },
+    "batch-processor": {
+      "file": "batch_processor.py",
+      "description": "Batch data processor with pandas",
+      "tags": ["data", "batch"],
+      "gpu": null,
+      "created": "2025-11-08T12:19:00",
+      "deployed": null
+    },
+    "scheduled-task": {
+      "file": "scheduled_task.py",
+      "description": "Hourly scheduled task example",
+      "tags": ["cron", "scheduled"],
+      "gpu": null,
+      "created": "2025-11-08T12:19:00",
+      "deployed": null
+    }
+  }
+}

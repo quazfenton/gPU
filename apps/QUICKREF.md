@@ -22,6 +22,13 @@ python3 runna.py app-update <name> --file app.py
 
 # Delete
 python3 runna.py app-delete <name>
+
+# Send text
+python3 runna.py send <endpoint> "text"
+python3 runna.py send <endpoint> "text" --field prompt
+
+# Chat
+python3 runna.py chat <endpoint>
 ```
 
 ## Built-in Apps
@@ -30,6 +37,7 @@ python3 runna.py app-delete <name>
 |-----|-----|----------|
 | image-classifier | T4 | Image classification |
 | text-generator | T4 | Text generation |
+| llm-chat | A10G | Interactive LLM chat |
 | web-scraper | None | Web scraping |
 | batch-processor | None | Batch processing |
 | scheduled-task | None | Cron jobs |
@@ -45,7 +53,7 @@ image = modal.Image.debian_slim().pip_install("deps")
 @app.function(image=image, gpu="T4")
 @modal.web_endpoint(method="POST")
 def handler(data: dict):
-    return {"result": "ok"}
+    return {"response": "ok"}
 ```
 
 ## GPU Types
@@ -53,3 +61,13 @@ def handler(data: dict):
 - T4: $0.60/hr - Inference
 - A10G: $1.10/hr - Balanced
 - A100: $4.00/hr - Training
+
+## Quick Workflow
+
+```bash
+# Deploy LLM
+python3 runna.py app-deploy llm-chat
+
+# Chat
+python3 runna.py chat llm-chat
+```

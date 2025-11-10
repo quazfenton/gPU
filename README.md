@@ -121,6 +121,27 @@ python3 runna.py app-add my-app \
 
 See [APP_LIBRARY.md](APP_LIBRARY.md) for complete app library documentation.
 
+### Send Text to Endpoints
+
+**Send single message:**
+```bash
+# Deploy LLM chat
+python3 runna.py app-deploy llm-chat
+
+# Send message
+python3 runna.py send llm-chat "Hello, how are you?"
+
+# Send to URL directly
+python3 runna.py send https://your-app.modal.run "Hello"
+```
+
+**Interactive chat:**
+```bash
+python3 runna.py chat llm-chat
+```
+
+See [CHAT_GUIDE.md](CHAT_GUIDE.md) for complete chat documentation.
+
 ### Basic Notebook Operations
 
 **List your kernels:**

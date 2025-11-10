@@ -16,6 +16,14 @@
       "created": "2025-11-08T12:19:00",
       "deployed": null
     },
+    "llm-chat": {
+      "file": "llm_chat.py",
+      "description": "Interactive LLM chat with GPT-2",
+      "tags": ["ml", "nlp", "chat", "llm"],
+      "gpu": "A10G",
+      "created": "2025-11-08T12:35:00",
+      "deployed": null
+    },
     "web-scraper": {
       "file": "web_scraper.py",
       "description": "Web scraper with BeautifulSoup",

@@ -1014,6 +1014,17 @@ def http_call(url: str, method: str = "POST", json_payload: dict | None = None):
     return requests.post(url, json=json_payload, timeout=60)
 
 
+def send_text(endpoint: str, text: str, field: str = "text") -> dict:
+    """Send text to endpoint and return response."""
+    url = resolve_endpoint(endpoint)
+    if not url:
+        raise ValueError(f"Endpoint not found: {endpoint}")
+    
+    response = requests.post(url, json={field: text}, timeout=120)
+    response.raise_for_status()
+    return response.json()
+
+
 # ----------------------------
 # Command Functions
 # ----------------------------
@@ -2302,6 +2313,39 @@ def cmd_app_delete(args):
         logger.error(f"App not found: {args.name}")
 
 
+def cmd_send(args):
+    """Send text to endpoint."""
+    try:
+        result = send_text(args.endpoint, args.text, field=getattr(args, "field", "text"))
+        print(json.dumps(result, indent=2))
+    except Exception as e:
+        logger.error(f"Failed to send: {e}")
+
+
+def cmd_chat(args):
+    """Interactive chat with endpoint."""
+    print(f"Chatting with {args.endpoint} (Ctrl+C to exit)")
+    print("-" * 50)
+    
+    while True:
+        try:
+            text = input("\nYou: ").strip()
+            if not text:
+                continue
+            
+            result = send_text(args.endpoint, text, field=getattr(args, "field", "text"))
+            
+            # Try to extract response text
+            response = result.get("response") or result.get("text") or result.get("output") or json.dumps(result)
+            print(f"Bot: {response}")
+            
+        except KeyboardInterrupt:
+            print("\n\nGoodbye!")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
+
+
 def cmd_serve_local(args):
     """Package notebook for local serving and optionally run functions-framework."""
     path = Path(args.path)
@@ -2887,6 +2931,19 @@ Examples:
     app_delete_parser = subparsers.add_parser("app-delete", help="Delete app from library")
     app_delete_parser.add_argument("name", help="App name")
     app_delete_parser.set_defaults(func=cmd_app_delete)
+
+    # Send text to endpoint
+    send_parser = subparsers.add_parser("send", help="Send text to endpoint")
+    send_parser.add_argument("endpoint", help="Endpoint name or URL")
+    send_parser.add_argument("text", help="Text to send")
+    send_parser.add_argument("--field", default="text", help="JSON field name (default: text)")
+    send_parser.set_defaults(func=cmd_send)
+
+    # Interactive chat
+    chat_parser = subparsers.add_parser("chat", help="Interactive chat with endpoint")
+    chat_parser.add_argument("endpoint", help="Endpoint name or URL")
+    chat_parser.add_argument("--field", default="text", help="JSON field name (default: text)")
+    chat_parser.set_defaults(func=cmd_chat)
 
     # Local serve command (Jupyter/local dev support)
     serve_parser = subparsers.add_parser(

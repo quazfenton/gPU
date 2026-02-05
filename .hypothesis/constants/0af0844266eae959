@@ -1,0 +1,4 @@
+# file: C:\Users\ceclabs\Downloads\copamunDiaL\gpu\notebook_ml_orchestrator\core\database.py
+# hypothesis_version: 6.151.5
+
+[30.0, 100, 'backend_id', 'completed_at', 'connection', 'count', 'created_at', 'error', 'id', 'inputs', 'metadata', 'orchestrator.db', 'priority', 'result', 'retry_count', 'started_at', 'status', 'template_name', 'user_id']

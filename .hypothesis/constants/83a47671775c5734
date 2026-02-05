@@ -1,0 +1,4 @@
+# file: C:\Users\ceclabs\Downloads\copamunDiaL\gpu\notebook_ml_orchestrator\core\backend_router.py
+# hypothesis_version: 6.151.5
+
+['backend_details', 'backends_by_type', 'healthy', 'healthy_backends', 'name', 'queue_length', 'status', 'timestamp', 'total_backends', 'type']

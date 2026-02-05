@@ -1,0 +1,4 @@
+# file: C:\Users\ceclabs\Downloads\copamunDiaL\gpu\notebook_ml_orchestrator\core\exceptions.py
+# hypothesis_version: 6.151.5
+
+['CONFIGURATION_ERROR', 'JOB_EXECUTION_ERROR', 'JOB_TIMEOUT_ERROR', 'JOB_VALIDATION_ERROR', 'SECURITY_ERROR', 'TEMPLATE_NOT_FOUND', 'UNEXPECTED_ERROR', 'UNKNOWN_ERROR', 'backend_id', 'batch_id', 'config_key', 'context', 'db_path', 'details', 'error', 'error_code', 'error_type', 'function', 'job_id', 'message', 'operation', 'original_exception', 'request_id', 'resource_type', 'security_check', 'step_name', 'success', 'template_name', 'timeout_seconds', 'timestamp', 'validation_errors', 'workflow_id']

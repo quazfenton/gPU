@@ -1,0 +1,4 @@
+# file: C:\Users\ceclabs\Downloads\copamunDiaL\gpu\notebook_ml_orchestrator\core\models.py
+# hypothesis_version: 6.151.5
+
+[0.0, 1.0, 100.0, 'cancelled', 'colab', 'completed', 'created', 'degraded', 'failed', 'healthy', 'huggingface', 'kaggle', 'local_gpu', 'modal', 'partially_failed', 'paused', 'queued', 'retrying', 'running', 'unhealthy', 'unknown']

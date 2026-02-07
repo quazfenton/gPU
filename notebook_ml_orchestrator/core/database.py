@@ -291,20 +291,20 @@ class DatabaseManager:
         try:
             with self.get_cursor() as cursor:
                 cursor.execute("""
-                    SELECT * FROM jobs 
-                    WHERE user_id = ? 
-                    ORDER BY created_at DESC 
+                    SELECT * FROM jobs
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC
                     LIMIT ?
                 """, (user_id, limit))
                 return [self._row_to_job(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get jobs for user {user_id}: {e}")
             return []
-    
+
     def _row_to_job(self, row: sqlite3.Row) -> Job:
         """Convert database row to Job instance."""
         from .models import JobResult  # Import here to avoid circular imports
-        
+
         job = Job(
                 id=row['id'],
                 user_id=row['user_id'],

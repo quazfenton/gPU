@@ -198,6 +198,7 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
                         )
                         job.error = str(result)
                         job.status = JobStatus.RETRYING
+                        status = job.status
                 elif status == JobStatus.RETRYING:
                     job.retry_count += 1
                     job.retry_at = datetime.now() + timedelta(

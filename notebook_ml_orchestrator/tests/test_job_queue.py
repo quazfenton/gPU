@@ -12,12 +12,10 @@ from datetime import datetime, timedelta
 from notebook_ml_orchestrator.core.job_queue import JobQueueManager, RetryPolicy, JobStateManager
 from notebook_ml_orchestrator.core.interfaces import Job
 from notebook_ml_orchestrator.core.models import JobStatus, JobResult
-from notebook_ml_orchestrator.core.exceptions import JobValidationError, DatabaseError
-
+from notebook_ml_orchestrator.core.exceptions import JobValidationError
 
 class TestRetryPolicy:
     """Test RetryPolicy functionality."""
-    
     def test_default_retry_policy(self):
         """Test default retry policy settings."""
         policy = RetryPolicy()

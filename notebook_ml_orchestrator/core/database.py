@@ -337,7 +337,7 @@ class DatabaseManager:
                             with self.get_cursor() as cursor:
                                 cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
                                 cursor.execute("""
-                                    DELETE FROM jobs
+                                cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
                                     WHERE status IN ('completed', 'failed', 'cancelled')
                                     AND created_at < ?
                                 """, (cutoff,))

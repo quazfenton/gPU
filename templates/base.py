@@ -35,8 +35,6 @@ class InputField:
     required: bool = True
     default: Any = None
     options: Optional[List[Any]] = None  # For dropdown/select inputs
-
-
 @dataclass
 class OutputField:
     """Definition of a template output field."""
@@ -44,23 +42,26 @@ class OutputField:
     type: str  # audio, image, video, text, json, file
     description: str = ""
 
-
 class Template(ABC):
     """Base class for all ML service templates."""
-    
+
     # Template metadata (override in subclasses)
     name: str = "Base Template"
     category: str = "General"
     description: str = "Base template class"
     version: str = "1.0.0"
-    
+
     # Input/output definitions
-    inputs: List[InputField] = field(default_factory=list)
-    outputs: List[OutputField] = field(default_factory=list)
-    
+    inputs: List[InputField]
+    outputs: List[OutputField]
+
     # Supported routing backends
-    routing: List[RouteType] = field(default_factory=lambda: [RouteType.LOCAL])
-    
+    routing: List[RouteType]
+
+    def __init__(self):
+        self.inputs = []
+        self.outputs = []
+        self.routing = [RouteType.LOCAL]
     # Resource requirements
     gpu_required: bool = False
     gpu_type: Optional[str] = None  # T4, A10G, A100

@@ -297,32 +297,33 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             'total_jobs': sum(stats.values()),
             'by_status': stats,
             'queue_length': stats.get('queued', 0),
-            'running_jobs': stats.get('running', 0)
-        }
-    
-    def start_retry_processor(self):
-        """Start the retry processing thread."""
-        if self._retry_thread and self._retry_thread.is_alive():
-            return
-        
-        self._running = True
-        self._retry_thread = threading.Thread(target=self._process_retries, daemon=True)
-        self._retry_thread.start()
-        self.logger.info("Retry processor started")
-    
-    def stop_retry_processor(self):
-        """Stop the retry processing thread."""
-        self._running = False
-        if self._retry_thread:
-            self._retry_thread.join(timeout=5.0)
-        self.logger.info("Retry processor stopped")
-    
-    def _process_retries(self):
-        """Process jobs scheduled for retry."""
-        while self._running:
-            try:
-                # Get jobs in retrying status
-                retrying_jobs = self.db.get_jobs_by_status(JobStatus.RETRYING, limit=100)
+                    'running_jobs': stats.get('running', 0)
+                }
+
+            def start_retry_processor(self):
+                """Start the retry processing thread."""
+                if self._retry_thread and self._retry_thread.is_alive():
+                    return
+
+                self._running = True
+                self._retry_thread = threading.Thread(target=self._process_retries, daemon=True)
+                self._retry_thread.start()
+                self.logger.info("Retry processor started")
+
+            def stop_retry_processor(self):
+                """Stop the retry processing thread."""
+                self._running = False
+                if self._retry_thread:
+                    self._retry_thread.join(timeout=5.0)
+                self.logger.info("Retry processor stopped")
+
+            def _process_retries(self):
+                """Process jobs scheduled for retry."""
+                while self._running:
+                    try:
+                        with self._lock:
+                            # Get jobs in retrying status
+                            retrying_jobs = self.db.get_jobs_by_status(JobStatus.RETRYING, limit=100)
                 
                 for job in retrying_jobs:
                     retry_at_str = job.metadata.get('retry_at')

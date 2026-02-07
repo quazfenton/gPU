@@ -320,11 +320,11 @@ class DatabaseManager:
                                                     priority=row['priority'],
                                                     metadata=json.loads(row['metadata']) if row['metadata'] else {}
                                                 )
-                                                if row['result']:
-                                                    result_data = json.loads(row['result'])
-                                                    job.result = JobResult(**result_data)
+        if row['result']:
+            result_data = json.loads(row['result'])
+            job.result = JobResult(**result_data)
 
-                                                return job
+        return job
 
                     def cleanup_old_jobs(self, days_old: int = 30) -> int:
                         """

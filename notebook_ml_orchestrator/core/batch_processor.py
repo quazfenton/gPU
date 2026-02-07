@@ -304,35 +304,37 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
     def handle_batch_failures(self, batch_id: str, failed_items: List[str]):
         """
         Handle individual item failures in batch.
-        
+
         Args:
             batch_id: Batch ID
             failed_items: List of failed item IDs
         """
-        batch = self.batches.get(batch_id)
-        if not batch:
-            return
-        
-        failed_count = 0
-        for item in batch.items:
-            if item.id in failed_items:
-                item.status = JobStatus.FAILED
-                item.completed_at = datetime.now()
-                failed_count += 1
-        
-        # Update batch status based on failures
-        total_items = len(batch.items)
-        completed_items = sum(1 for item in batch.items if item.status == JobStatus.COMPLETED)
-        
-        if failed_count == total_items:
-            batch.status = BatchStatus.FAILED
-        elif failed_count > 0:
-            batch.status = BatchStatus.PARTIALLY_FAILED
-        elif completed_items == total_items:
-            batch.status = BatchStatus.COMPLETED
-        
-        batch.completed_at = datetime.now()
-        
+        failed_set = set(failed_items)
+        with self._lock:
+            batch = self.batches.get(batch_id)
+            if not batch:
+                return
+
+            failed_count = 0
+            for item in batch.items:
+                if item.id in failed_set:
+                    item.status = JobStatus.FAILED
+                    item.completed_at = datetime.now()
+                    failed_count += 1
+
+            # Update batch status based on failures
+            total_items = len(batch.items)
+            completed_items = sum(1 for item in batch.items if item.status == JobStatus.COMPLETED)
+
+            if failed_count == total_items:
+                batch.status = BatchStatus.FAILED
+            elif failed_count > 0:
+                batch.status = BatchStatus.PARTIALLY_FAILED
+            elif completed_items == total_items:
+                batch.status = BatchStatus.COMPLETED
+
+            batch.completed_at = datetime.now()
+
         self.logger.warning(f"Batch {batch_id} had {failed_count} failed items")
     
     def get_batch_statistics(self) -> Dict:

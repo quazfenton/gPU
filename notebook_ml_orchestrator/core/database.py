@@ -331,7 +331,6 @@ class DatabaseManager:
 
             Args:
                 days_old: Number of days after which to delete completed jobs
-            """
 
             Returns:
                 Number of jobs deleted

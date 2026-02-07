@@ -207,10 +207,6 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
                             # batch.completed_at should remain None here, as it wasn't fully successful
                         self.logger.info(f"Batch {batch_id} execution completed")
                         return batch
-
-        def track_batch_progress(self, batch_id: str) -> BatchProgress:
-            """Track progress of batch execution.
-
             Args:
                 batch_id: Batch ID to track
             Returns:

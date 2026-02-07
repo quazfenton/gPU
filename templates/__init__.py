@@ -5,10 +5,7 @@ Automatically discovers all Template subclasses in the templates directory
 and provides a registry for easy access.
 """
 
-import os
 import sys
-import importlib
-import importlib.util
 import inspect
 from pathlib import Path
 from typing import Dict, List, Optional, Type

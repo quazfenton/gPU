@@ -25,32 +25,30 @@ class DatabaseConfig:
         return cls(
             path=os.getenv('ORCHESTRATOR_DB_PATH', cls.path),
             timeout=float(os.getenv('ORCHESTRATOR_DB_TIMEOUT', cls.timeout)),
-            max_connections=int(os.getenv('ORCHESTRATOR_DB_MAX_CONNECTIONS', cls.max_connections)),
-            enable_wal=os.getenv('ORCHESTRATOR_DB_ENABLE_WAL', 'true').lower() == 'true'
-        )
+                        max_connections=int(os.getenv('ORCHESTRATOR_DB_MAX_CONNECTIONS', cls.max_connections)),
+                        enable_wal=os.getenv('ORCHESTRATOR_DB_ENABLE_WAL', 'true').lower() == 'true'
+                    )
 
+            @dataclass
+            class LoggingConfig:
+                """Logging configuration settings."""
+                level: str = "INFO"
+                file_path: Optional[str] = "logs/orchestrator.log"
+                max_file_size: int = 10 * 1024 * 1024  # 10MB
+                backup_count: int = 5
+                enable_console: bool = True
+                format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-@dataclass
-class LoggingConfig:
-    """Logging configuration settings."""
-    level: str = "INFO"
-    file_path: Optional[str] = "logs/orchestrator.log"
-    max_file_size: int = 10 * 1024 * 1024  # 10MB
-    backup_count: int = 5
-    enable_console: bool = True
-    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    
-    @classmethod
-    def from_env(cls) -> 'LoggingConfig':
-        """Create logging config from environment variables."""
-        return cls(
-            level=os.getenv('ORCHESTRATOR_LOG_LEVEL', cls.level),
-            file_path=os.getenv('ORCHESTRATOR_LOG_FILE'),
-            max_file_size=int(os.getenv('ORCHESTRATOR_LOG_MAX_SIZE', cls.max_file_size)),
-            backup_count=int(os.getenv('ORCHESTRATOR_LOG_BACKUP_COUNT', cls.backup_count)),
-            enable_console=os.getenv('ORCHESTRATOR_LOG_CONSOLE', 'true').lower() == 'true'
-        )
-
+                @classmethod
+                def from_env(cls) -> 'LoggingConfig':
+                    """Create logging config from environment variables."""
+                    return cls(
+                        level=os.getenv('ORCHESTRATOR_LOG_LEVEL', cls.level),
+                        file_path=os.getenv('ORCHESTRATOR_LOG_FILE', cls.file_path),
+                        max_file_size=int(os.getenv('ORCHESTRATOR_LOG_MAX_SIZE', cls.max_file_size)),
+                        backup_count=int(os.getenv('ORCHESTRATOR_LOG_BACKUP_COUNT', cls.backup_count)),
+                        enable_console=os.getenv('ORCHESTRATOR_LOG_CONSOLE', 'true').lower() == 'true'
+                    )
 
 @dataclass
 class JobQueueConfig:

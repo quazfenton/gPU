@@ -135,28 +135,35 @@ class MultiBackendRouter(BackendRouterInterface, LoggerMixin):
     def route_job(self, job: Job) -> Backend:
         """
         Select optimal backend for job execution.
-        
+
         Args:
             job: Job to route
-            
+
         Returns:
             Selected backend
-            
+
         Raises:
             BackendNotAvailableError: If no suitable backend is available
         """
-        # This is a placeholder implementation
-        # Full implementation will be added in task 4.2
-        
         with self._lock:
             # Get healthy backends that support the job template
             suitable_backends = []
-            
+
             for backend in self.backends.values():
-                if (self.health_monitor.is_backend_healthy(backend.id) and
-                    backend.supports_template(job.template_name)):
-                    suitable_backends.append(backend)
-            
+                # Check if backend supports the template first (cheaper check)
+                if not backend.supports_template(job.template_name):
+                    continue
+
+                # Check health status and update if no history exists
+                if not self.health_monitor.is_backend_healthy(backend.id):
+                    # Attempt to check health if no history exists
+                    health_status = self.health_monitor.check_backend_health(backend)
+                    self.health_monitor.update_health_status(backend.id, health_status)
+                    if health_status != HealthStatus.HEALTHY:
+                        continue
+
+                suitable_backends.append(backend)
+
             if not suitable_backends:
                 raise BackendNotAvailableError(
                     f"No suitable backend available for template {job.template_name}",

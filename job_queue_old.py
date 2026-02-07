@@ -190,28 +190,35 @@ def next_job(
     """
     db_path = db_path or get_db_path()
     init_db(db_path)
-    
+
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
-    
-    # Build query with optional route filter
+
+    # Use a single atomic UPDATE with RETURNING to claim the next job
     query = """
-        SELECT id, template, payload, route, status, result, error,
-               retries, created, updated, workflow_id, parent_job_id
-        FROM jobs
-        WHERE status IN (?, ?)
+        UPDATE jobs
+        SET status = ?, updated = ?
+        WHERE id = (
+            SELECT id FROM jobs
+            WHERE status IN (?, ?)
     """
-    params = [JobStatus.QUEUED.value, JobStatus.RETRY.value]
-    
+    params = [JobStatus.RUNNING.value, time.time(), JobStatus.QUEUED.value, JobStatus.RETRY.value]
+
     if route:
         query += " AND route = ?"
         params.append(route)
-    
-    query += " ORDER BY created LIMIT 1"
-    
+
+    query += """
+        ORDER BY created
+        LIMIT 1
+    )
+    RETURNING id, template, payload, route, status, result, error,
+              retries, created, updated, workflow_id, parent_job_id
+    """
+
     cursor.execute(query, params)
     row = cursor.fetchone()
-    
+
     if not row:
         conn.close()
         return None

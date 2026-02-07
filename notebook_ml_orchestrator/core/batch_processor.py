@@ -204,7 +204,7 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
                         # If not all items were successful (e.g., some failed), the batch itself is considered FAILED.
                         # In this interpretation, 'completed_at' specifically signifies successful completion.
                         batch.status = BatchStatus.FAILED
-                        batch.completed_at = None # Explicitly set to None for a batch that did not complete successfully
+                        batch.completed_at = datetime.now()
 
                  else:
                     # This 'else' block likely corresponds to an initial failure condition

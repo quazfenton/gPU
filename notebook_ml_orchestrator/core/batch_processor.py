@@ -277,29 +277,31 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
     def get_batch(self, batch_id: str) -> Optional[BatchJob]:
         """
         Get batch by ID.
-        
+
         Args:
             batch_id: Batch ID
-            
+
         Returns:
             Batch job or None if not found
         """
-        return self.batches.get(batch_id)
-    
+        with self._lock:
+            return self.batches.get(batch_id)
+
     def list_batches(self, user_id: str = None) -> List[BatchJob]:
         """
         List batch jobs.
-        
+
         Args:
             user_id: Optional user ID to filter by
-            
+
         Returns:
             List of batch jobs
         """
-        batches = list(self.batches.values())
-        if user_id:
-            batches = [b for b in batches if b.user_id == user_id]
-        return batches
+        with self._lock:
+            batches = list(self.batches.values())
+            if user_id:
+                batches = [b for b in batches if b.user_id == user_id]
+            return batches
     
     def handle_batch_failures(self, batch_id: str, failed_items: List[str]):
         """

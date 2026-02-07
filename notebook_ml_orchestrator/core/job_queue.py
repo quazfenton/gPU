@@ -251,32 +251,35 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             limit: Maximum number of jobs to return
             
         Returns:
-            List of jobs for the user
-        """
-        return self.db.get_user_jobs(user_id, limit)
-    
-    def cancel_job(self, job_id: str) -> bool:
-        """
-        Cancel a job.
-        
-        Args:
-            job_id: Job ID to cancel
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            with self._lock:
-                job = self.db.get_job(job_id)
-                if not job:
-                    return False
-                
-                if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
-                    return False  # Cannot cancel finished jobs
-                
-                job.status = JobStatus.CANCELLED
-                job.completed_at = datetime.now()
-                
+                    List of jobs for the user
+                """
+                return self.db.get_user_jobs(user_id, limit)
+
+            def cancel_job(self, job_id: str) -> bool:
+                """
+                Cancel a job.
+
+                Args:
+                    job_id: Job ID to cancel
+
+                Returns:
+                    True if successful, False otherwise
+                """
+                try:
+                    with self._lock:
+                        job = self.db.get_job(job_id)
+                        if not job:
+                            return False
+
+                        if job.status in [JobStatus.COMPLETED, JobStatus.CANCELLED]:
+                            return False  # Cannot cancel finished or already cancelled jobs
+
+                        if job.status == JobStatus.FAILED:
+                            # Validate state transition before cancelling a failed job
+                            JobStateManager.validate_transition(job, JobStatus.CANCELLED)
+
+                        job.status = JobStatus.CANCELLED
+                        job.completed_at = datetime.now()
                 success = self.db.update_job(job)
                 if success:
                     self.logger.info(f"Job {job_id} cancelled")

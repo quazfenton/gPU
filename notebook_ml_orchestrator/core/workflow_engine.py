@@ -95,30 +95,32 @@ class WorkflowEngine(WorkflowEngineInterface, LoggerMixin):
     def create_workflow(self, definition: WorkflowDefinition) -> Workflow:
         """
         Create a new workflow from definition.
-        
+
         Args:
             definition: Workflow definition
-            
+
         Returns:
             Created workflow
-            
+
         Raises:
             WorkflowValidationError: If workflow definition is invalid
         """
         # This is a placeholder implementation
         # Full implementation will be added in task 6.1
-        
+
         # Basic validation
         if not definition.steps:
             raise WorkflowValidationError("Workflow must have at least one step")
-        
+
         # Validate DAG structure
         if not self.dag_executor.validate_dependencies(definition):
-            raise WorkflowValidationError("Workflow contains circular dependencies")
-        
+            raise WorkflowValidationError("Workflow contains circular dependencies or invalid dependencies")
+
         workflow = Workflow(
             definition=definition,
             created_at=datetime.now(),
+            status=WorkflowStatus.CREATED
+        )
             updated_at=datetime.now()
         )
         

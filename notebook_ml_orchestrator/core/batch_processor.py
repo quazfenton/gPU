@@ -182,22 +182,37 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
 
                     # For now, just mark all items as completed
                     # Full execution logic will be implemented in task 7.1
-                    all_items_completed = True
+                    all_items_successful = True # This flag will track if ALL items ultimately succeeded
                     for item in batch.items:
                         item.status = JobStatus.COMPLETED
                         item.started_at = datetime.now()
                         item.completed_at = datetime.now()
                         item.result = JobResult(
-                            success=True,
+                            success=True, # Placeholder: always True for now
                             outputs={"placeholder": "item completed"},
                             execution_time_seconds=1.0
                         )
                         batch.progress.completed_items += 1
+                        # In future implementation (task 7.1), this flag would be set to False
+                        # if any item.result.success is False.
 
-                    batch.status = BatchStatus.COMPLETED
-                    batch.completed_at = datetime.now() if all_items_completed else None
+                    # Determine final batch status and completion timestamp based on item outcomes
+                    if all_items_successful:
+                        batch.status = BatchStatus.COMPLETED
+                        batch.completed_at = datetime.now() # Batch truly completed successfully
+                    else:
+                        # If not all items were successful (e.g., some failed), the batch itself is considered FAILED.
+                        # In this interpretation, 'completed_at' specifically signifies successful completion.
+                        batch.status = BatchStatus.FAILED
+                        batch.completed_at = None # Explicitly set to None for a batch that did not complete successfully
+
                  else:
+                    # This 'else' block likely corresponds to an initial failure condition
+                    # (e.g., batch not in QUEUED status as per the earlier validation).
+                    # In such a case, the batch didn't even start processing items successfully.
                     batch.status = BatchStatus.FAILED
+                    # batch.completed_at should remain None here, as it was never successfully executed
+                    # beyond the initial validation stages.
 
                 self.logger.info(f"Batch {batch_id} execution completed")
                 return batch

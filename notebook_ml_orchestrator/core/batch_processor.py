@@ -234,15 +234,6 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
 
                 batch.progress = progress
                 return progress
-                    progress.running_items += 1
-                elif item.status == JobStatus.QUEUED:
-                    progress.queued_items += 1
-
-            return progress
-                    progress.queued_items += 1
-
-            batch.progress = progress
-            return progress
                     progress.completed_items += 1
                 elif item.status == JobStatus.FAILED:
                     progress.failed_items += 1

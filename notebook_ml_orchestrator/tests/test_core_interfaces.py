@@ -5,7 +5,6 @@ This module tests the fundamental data structures and interfaces
 of the orchestration system.
 """
 
-import pytest
 from datetime import datetime
 from typing import Dict, Any
 

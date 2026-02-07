@@ -71,32 +71,27 @@ class TestBasicIntegration:
         # Create simple workflow definition
         workflow_def = WorkflowDefinition(
             steps=[
-                {"name": "step1", "template": "mock-template", "inputs": {"param": "value1"}}
-            ],
-            connections=[],  # No connections to avoid validation issues
-            metadata={"description": "Simple test workflow"}
-        )
-        
-        # Note: Full workflow validation will be implemented in task 6.1
-        # For now, test basic workflow creation with minimal validation
-        try:
-            workflow = workflow_engine.create_workflow(workflow_def)
-            assert workflow.id is not None
-            
-            # Execute workflow (placeholder implementation)
-            execution = workflow_engine.execute_workflow(workflow.id, {"start": "input"})
-            assert execution.workflow_id == workflow.id
-            
-            # Verify workflow execution was created
-            retrieved_execution = workflow_engine.get_workflow_execution(execution.id)
-            assert retrieved_execution is not None
-            assert retrieved_execution.workflow_id == workflow.id
-        except Exception as e:
-            # If workflow validation fails due to placeholder implementation,
-            # just verify the workflow engine is initialized
-            assert workflow_engine is not None
-            workflows = workflow_engine.list_workflows()
-            assert isinstance(workflows, list)
+                workflow_def = WorkflowDefinition(
+                    steps=[
+                        {"name": "step1", "template": "mock-template", "inputs": {"param": "value1"}}
+                    ],
+                    connections=[],  # No connections to avoid validation issues
+                    metadata={"description": "Simple test workflow"}
+                )
+
+                # Note: Full workflow validation will be implemented in task 6.1
+                # For now, test basic workflow creation with minimal validation
+                workflow = workflow_engine.create_workflow(workflow_def)
+                assert workflow.id is not None
+
+                # Execute workflow (placeholder implementation)
+                execution = workflow_engine.execute_workflow(workflow.id, {"start": "input"})
+                assert execution.workflow_id == workflow.id
+
+                # Verify workflow execution was created
+                retrieved_execution = workflow_engine.get_workflow_execution(execution.id)
+                assert retrieved_execution is not None
+                assert retrieved_execution.workflow_id == workflow.id
     
     def test_batch_processor_and_job_queue_integration(self, batch_processor, mock_template):
         """Test integration between batch processor and job queue."""

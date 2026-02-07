@@ -160,12 +160,9 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
         
         Args:
             job_id: Job ID to update
-            """
-            Update job status and store results.
-
-            Args:
-                job_id: Job ID to update
-                status: New job status
+            status: New job status
+            result: Optional result of the job execution
+        """
                 result: Job result (for completed jobs)
 
             Raises:

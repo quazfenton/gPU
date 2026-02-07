@@ -343,7 +343,7 @@ class DatabaseManager:
                         DELETE FROM jobs
                         WHERE status IN ('completed', 'failed', 'cancelled')
                         AND created_at < ?
-                    """, (cutoff,))
+                    AND datetime(created_at) < datetime(?)
                 return cursor.rowcount
         except Exception as e:
             logger.error(f"Failed to cleanup old jobs: {e}")

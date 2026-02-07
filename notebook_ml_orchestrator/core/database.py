@@ -323,9 +323,6 @@ class DatabaseManager:
         if row['result']:
             result_data = json.loads(row['result'])
             job.result = JobResult(**result_data)
-
-        return job
-
                     def cleanup_old_jobs(self, days_old: int = 30) -> int:
                         """
                         Clean up old completed jobs.
@@ -333,22 +330,21 @@ class DatabaseManager:
                         Args:
                             days_old: Number of days after which to delete completed jobs
 
-            Returns:
-                Number of jobs deleted
-            """
-            try:
-                with self.get_cursor() as cursor:
-                    cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
-                    cursor.execute("""
-                        DELETE FROM jobs
-                        WHERE status IN ('completed', 'failed', 'cancelled')
-                        AND created_at < ?
-                    AND datetime(created_at) < datetime(?)
-                return cursor.rowcount
-        except Exception as e:
-            logger.error(f"Failed to cleanup old jobs: {e}")
-            return 0
-    
+                        Returns:
+                            Number of jobs deleted
+                        """
+                        try:
+                            with self.get_cursor() as cursor:
+                                cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
+                                cursor.execute("""
+                                    DELETE FROM jobs
+                                    WHERE status IN ('completed', 'failed', 'cancelled')
+                                    AND created_at < ?
+                                """, (cutoff,))
+                                return cursor.rowcount
+                        except Exception as e:
+                            logger.error(f"Failed to cleanup old jobs: {e}")
+                            return 0
     def get_job_statistics(self) -> Dict[str, int]:
         """
         Get job statistics by status.

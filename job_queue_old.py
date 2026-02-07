@@ -1,7 +1,7 @@
 """
 Persistent job queue using SQLite.
 
-Zero-infrastructure job queue that survives notebook restarts.
+Zero-infrastructure job queue that survives process restarts.
 Supports batch processing, job chaining, and multi-backend routing.
 """
 

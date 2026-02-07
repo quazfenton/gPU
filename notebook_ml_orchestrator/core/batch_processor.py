@@ -223,22 +223,6 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
             batch_id: Batch ID to track
             
         Returns:
-            Current batch progress
-        """
-            def track_batch_progress(self, batch_id: str) -> BatchProgress:
-        """Track progress of batch execution.
-
-        Args:
-            batch_id: Batch ID to track
-
-        Returns:
-            Current batch progress
-        """
-        with self._lock:
-            batch = self.batches.get(batch_id)
-            if not batch:
-                return BatchProgress(total_items=0)
-
             # Update progress from items
             progress = BatchProgress(total_items=len(batch.items))
             for item in batch.items:
@@ -249,6 +233,9 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
                 elif item.status == JobStatus.RUNNING:
                     progress.running_items += 1
                 elif item.status == JobStatus.QUEUED:
+                    progress.queued_items += 1
+
+            return progress
                     progress.queued_items += 1
 
             batch.progress = progress

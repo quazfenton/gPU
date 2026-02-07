@@ -191,11 +191,18 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
                     if not self.retry_policy.should_retry(job):
                         job.completed_at = datetime.now()
                         job.error = str(result)
+                    else:
+                        job.retry_count += 1
+                        job.retry_at = datetime.now() + timedelta(
+                            seconds=self.retry_policy.get_retry_delay(job.retry_count)
+                        )
+                        job.error = str(result)
+                        job.status = JobStatus.RETRYING
+                elif status == JobStatus.RETRYING:
                     job.retry_count += 1
                     job.retry_at = datetime.now() + timedelta(
                         seconds=self.retry_policy.get_retry_delay(job.retry_count)
                     )
-                    job.error = str(result)
                 elif isinstance(result, str):
                     job.error = result
             

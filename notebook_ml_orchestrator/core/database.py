@@ -324,7 +324,6 @@ class DatabaseManager:
             result_data = json.loads(row['result'])
             job.result = JobResult(**result_data)
         return job
-                    def cleanup_old_jobs(self, days_old: int = 30) -> int:
                         """
                         Clean up old completed jobs.
 

@@ -285,7 +285,8 @@ class ErrorHandler:
         response = {
             'success': False,
             'error': error_info,
-            'timestamp': str(datetime.now())
+from typing import Any, Dict, Optional
+from datetime import datetime
         }
         
         if request_id:

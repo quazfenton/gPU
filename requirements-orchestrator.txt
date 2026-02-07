@@ -1,6 +1,5 @@
 # Core dependencies for Notebook ML Orchestrator
 # Database and persistence
-sqlite3  # Built into Python, but listed for clarity
 
 # Testing framework
 pytest>=7.0.0

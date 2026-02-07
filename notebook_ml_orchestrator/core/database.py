@@ -339,11 +339,12 @@ class DatabaseManager:
         """
         try:
             with self.get_cursor() as cursor:
+                cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
                 cursor.execute("""
-                    DELETE FROM jobs 
-                    WHERE status IN ('completed', 'failed', 'cancelled') 
-                    AND datetime(created_at) < datetime('now', '-{} days')
-                """.format(days_old))
+                    DELETE FROM jobs
+                    WHERE status IN ('completed', 'failed', 'cancelled')
+                    AND created_at < ?
+                """, (cutoff,))
                 return cursor.rowcount
         except Exception as e:
             logger.error(f"Failed to cleanup old jobs: {e}")

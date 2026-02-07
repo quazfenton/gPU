@@ -225,24 +225,34 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
         Returns:
             Current batch progress
         """
-        batch = self.batches.get(batch_id)
-        if not batch:
-            return BatchProgress(total_items=0)
-        
-        # Update progress from items
-        progress = BatchProgress(total_items=len(batch.items))
-        for item in batch.items:
-            if item.status == JobStatus.COMPLETED:
-                progress.completed_items += 1
-            elif item.status == JobStatus.FAILED:
-                progress.failed_items += 1
-            elif item.status == JobStatus.RUNNING:
-                progress.running_items += 1
-            elif item.status == JobStatus.QUEUED:
-                progress.queued_items += 1
-        
-        batch.progress = progress
-        return progress
+            def track_batch_progress(self, batch_id: str) -> BatchProgress:
+        """Track progress of batch execution.
+
+        Args:
+            batch_id: Batch ID to track
+
+        Returns:
+            Current batch progress
+        """
+        with self._lock:
+            batch = self.batches.get(batch_id)
+            if not batch:
+                return BatchProgress(total_items=0)
+
+            # Update progress from items
+            progress = BatchProgress(total_items=len(batch.items))
+            for item in batch.items:
+                if item.status == JobStatus.COMPLETED:
+                    progress.completed_items += 1
+                elif item.status == JobStatus.FAILED:
+                    progress.failed_items += 1
+                elif item.status == JobStatus.RUNNING:
+                    progress.running_items += 1
+                elif item.status == JobStatus.QUEUED:
+                    progress.queued_items += 1
+
+            batch.progress = progress
+            return progress
     
     def cancel_batch(self, batch_id: str) -> bool:
         """

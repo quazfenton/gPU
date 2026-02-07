@@ -315,32 +315,35 @@ class DatabaseManager:
                                                     created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.now(),
                                                     started_at=datetime.fromisoformat(row['started_at']) if row['started_at'] else None,
                                                     completed_at=datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
-                                                    error=row['error'],
-                                                    retry_count=row['retry_count'],
-                                                    priority=row['priority'],
-                                                    metadata=json.loads(row['metadata']) if row['metadata'] else {}
-                                                )
-        if row['result']:
-            result_data = json.loads(row['result'])
-            job.result = JobResult(**result_data)
-        return job
-                        """
-                        Clean up old completed jobs.
+                                                        error=row['error'],
+                                                        retry_count=row['retry_count'],
+                                                        priority=row['priority'],
+                                                        metadata=json.loads(row['metadata']) if row['metadata'] else {}
+                                                    )
+            if row['result']:
+                result_data = json.loads(row['result'])
+                job.result = JobResult(**result_data)
+            return job
 
-                        Args:
-                            days_old: Number of days after which to delete completed jobs
+        def cleanup_old_jobs(self, days_old: int = 30) -> int:
+            """
+            Clean up old completed jobs.
 
-                        Returns:
-                            Number of jobs deleted
-                        """
-                        try:
-                            with self.get_cursor() as cursor:
-                                cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
-                                cursor.execute("""
-                                cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
-                                    WHERE status IN ('completed', 'failed', 'cancelled')
-                                    AND created_at < ?
-                                """, (cutoff,))
+            Args:
+                days_old: Number of days after which to delete completed jobs
+
+            Returns:
+                Number of jobs deleted
+            """
+            try:
+                with self.get_cursor() as cursor:
+                    cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
+                    cursor.execute("""
+                        DELETE FROM jobs
+                        WHERE status IN ('completed', 'failed', 'cancelled')
+                        AND created_at < ?
+                    """, (cutoff,))
+                    return cursor.rowcount
                                 return cursor.rowcount
                         except Exception as e:
                             logger.error(f"Failed to cleanup old jobs: {e}")

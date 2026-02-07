@@ -323,6 +323,7 @@ class DatabaseManager:
         if row['result']:
             result_data = json.loads(row['result'])
             job.result = JobResult(**result_data)
+        return job
                     def cleanup_old_jobs(self, days_old: int = 30) -> int:
                         """
                         Clean up old completed jobs.
@@ -335,7 +336,7 @@ class DatabaseManager:
                         """
                         try:
                             with self.get_cursor() as cursor:
-                                cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
+                                cutoff = (datetime.now() - timedelta(days=days_old)).strftime("%Y-%m-%d %H:%M:%S")
                                 cursor.execute("""
                                     DELETE FROM jobs
                                     WHERE status IN ('completed', 'failed', 'cancelled')

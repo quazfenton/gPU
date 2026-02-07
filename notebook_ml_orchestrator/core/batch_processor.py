@@ -205,32 +205,44 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
                         # In this interpretation, 'completed_at' specifically signifies successful completion.
                         batch.status = BatchStatus.FAILED
                         batch.completed_at = datetime.now()
+                    else:
+                        # This 'else' block likely corresponds to an initial failure condition
+                        # (e.g., batch not in QUEUED status as per the earlier validation).
+                        # In such a case, the batch didn't even start processing items successfully.
+                        batch.status = BatchStatus.FAILED
+                        # batch.completed_at should remain None here, as it was never successfully executed
+                        # beyond the initial validation stages.
 
-                 else:
-                    # This 'else' block likely corresponds to an initial failure condition
-                    # (e.g., batch not in QUEUED status as per the earlier validation).
-                    # In such a case, the batch didn't even start processing items successfully.
-                    batch.status = BatchStatus.FAILED
-                    # batch.completed_at should remain None here, as it was never successfully executed
-                    # beyond the initial validation stages.
+                    self.logger.info(f"Batch {batch_id} execution completed")
+                    return batch
 
-                self.logger.info(f"Batch {batch_id} execution completed")
-                return batch
-        """
-        Track progress of batch execution.
-        
-        Args:
-            batch_id: Batch ID to track
-            
-        Returns:
-            # Update progress from items
-            progress = BatchProgress(total_items=len(batch.items))
-            for item in batch.items:
-                if item.status == JobStatus.COMPLETED:
-                    progress.completed_items += 1
-                elif item.status == JobStatus.FAILED:
-                    progress.failed_items += 1
-                elif item.status == JobStatus.RUNNING:
+        def track_batch_progress(self, batch_id: str) -> BatchProgress:
+            """Track progress of batch execution.
+
+            Args:
+                batch_id: Batch ID to track
+
+            Returns:
+                Current batch progress
+            """
+            with self._lock:
+                batch = self.batches.get(batch_id)
+                if not batch:
+                    raise BatchValidationError(f"Batch {batch_id} not found")
+
+                progress = BatchProgress(total_items=len(batch.items))
+                for item in batch.items:
+                    if item.status == JobStatus.COMPLETED:
+                        progress.completed_items += 1
+                    elif item.status == JobStatus.FAILED:
+                        progress.failed_items += 1
+                    elif item.status == JobStatus.RUNNING:
+                        progress.running_items += 1
+                    elif item.status == JobStatus.QUEUED:
+                        progress.queued_items += 1
+
+                batch.progress = progress
+                return progress
                     progress.running_items += 1
                 elif item.status == JobStatus.QUEUED:
                     progress.queued_items += 1

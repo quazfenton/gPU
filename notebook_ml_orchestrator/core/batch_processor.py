@@ -253,6 +253,16 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
 
             batch.progress = progress
             return progress
+                    progress.completed_items += 1
+                elif item.status == JobStatus.FAILED:
+                    progress.failed_items += 1
+                elif item.status == JobStatus.RUNNING:
+                    progress.running_items += 1
+                elif item.status == JobStatus.QUEUED:
+                    progress.queued_items += 1
+
+            batch.progress = progress
+            return progress
     
     def cancel_batch(self, batch_id: str) -> bool:
         """

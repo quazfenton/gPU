@@ -305,7 +305,7 @@ class DatabaseManager:
         """Convert database row to Job instance."""
         from .models import JobResult  # Import here to avoid circular imports
 
-            job = Job(
+        job = Job(
                 id=row['id'],
                 user_id=row['user_id'],
                 template_name=row['template_name'],

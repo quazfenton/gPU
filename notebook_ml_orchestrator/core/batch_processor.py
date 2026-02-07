@@ -176,32 +176,31 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
                 raise BatchValidationError(f"Batch {batch_id} not found")
             
             if batch.status != BatchStatus.QUEUED:
-                raise BatchValidationError(f"Batch {batch_id} is not in queued status")
-            
-            # Mark batch as running
-            batch.status = BatchStatus.RUNNING
-            batch.started_at = datetime.now()
-            
-            # For now, just mark all items as completed
-            # Full execution logic will be implemented in task 7.1
-            for item in batch.items:
-                item.status = JobStatus.COMPLETED
-                item.started_at = datetime.now()
-                item.completed_at = datetime.now()
-                item.result = JobResult(
-                    success=True,
-                    outputs={"placeholder": "item completed"},
-                    execution_time_seconds=1.0
-                )
-                batch.progress.completed_items += 1
-            
-            batch.status = BatchStatus.COMPLETED
-            batch.completed_at = datetime.now()
-        
-        self.logger.info(f"Batch {batch_id} execution completed")
-        return batch
-    
-    def track_batch_progress(self, batch_id: str) -> BatchProgress:
+                    # Mark batch as running
+                    batch.status = BatchStatus.RUNNING
+                    batch.started_at = datetime.now()
+
+                    # For now, just mark all items as completed
+                    # Full execution logic will be implemented in task 7.1
+                    all_items_completed = True
+                    for item in batch.items:
+                        item.status = JobStatus.COMPLETED
+                        item.started_at = datetime.now()
+                        item.completed_at = datetime.now()
+                        item.result = JobResult(
+                            success=True,
+                            outputs={"placeholder": "item completed"},
+                            execution_time_seconds=1.0
+                        )
+                        batch.progress.completed_items += 1
+
+                    batch.status = BatchStatus.COMPLETED
+                    batch.completed_at = datetime.now() if all_items_completed else None
+                 else:
+                    batch.status = BatchStatus.FAILED
+
+                self.logger.info(f"Batch {batch_id} execution completed")
+                return batch
         """
         Track progress of batch execution.
         

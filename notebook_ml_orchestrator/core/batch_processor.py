@@ -207,39 +207,34 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
                             # batch.completed_at should remain None here, as it wasn't fully successful
                         self.logger.info(f"Batch {batch_id} execution completed")
                         return batch
-            Args:
-                batch_id: Batch ID to track
-            Returns:
-                Current batch progress
-            """
-            with self._lock:
-                batch = self.batches.get(batch_id)
-                if not batch:
-                    raise BatchValidationError(f"Batch {batch_id} not found")
+            def track_batch_progress(self, batch_id: str) -> BatchProgress:
+                """
+                Track batch progress.
 
-                progress = BatchProgress(total_items=len(batch.items))
-                for item in batch.items:
-                    if item.status == JobStatus.COMPLETED:
-                        progress.completed_items += 1
-                    elif item.status == JobStatus.FAILED:
-                        progress.failed_items += 1
-                    elif item.status == JobStatus.RUNNING:
-                        progress.running_items += 1
-                    elif item.status == JobStatus.QUEUED:
-                        progress.queued_items += 1
+                Args:
+                    batch_id: Batch ID to track
 
-                batch.progress = progress
-                return progress
-                    progress.completed_items += 1
-                elif item.status == JobStatus.FAILED:
-                    progress.failed_items += 1
-                elif item.status == JobStatus.RUNNING:
-                    progress.running_items += 1
-                elif item.status == JobStatus.QUEUED:
-                    progress.queued_items += 1
+                Returns:
+                    Current batch progress
+                """
+                with self._lock:
+                    batch = self.batches.get(batch_id)
+                    if not batch:
+                        raise BatchValidationError(f"Batch {batch_id} not found")
 
-            batch.progress = progress
-            return progress
+                    progress = BatchProgress(total_items=len(batch.items))
+                    for item in batch.items:
+                        if item.status == JobStatus.COMPLETED:
+                            progress.completed_items += 1
+                        elif item.status == JobStatus.FAILED:
+                            progress.failed_items += 1
+                        elif item.status == JobStatus.RUNNING:
+                            progress.running_items += 1
+                        elif item.status == JobStatus.QUEUED:
+                            progress.queued_items += 1
+
+                    batch.progress = progress
+                    return progress
     
     def cancel_batch(self, batch_id: str) -> bool:
         """

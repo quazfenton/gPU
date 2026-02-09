@@ -126,6 +126,48 @@ class BackendResourceError(BackendError):
         })
 
 
+class BackendAuthenticationError(BackendError):
+    """Raised when backend authentication fails."""
+    
+    def __init__(self, backend_id: str, message: str = None):
+        msg = message or f"Authentication failed for backend {backend_id}"
+        super().__init__(msg, "BACKEND_AUTHENTICATION_ERROR")
+        self.backend_id = backend_id
+        self.details['backend_id'] = backend_id
+
+
+class BackendQuotaExceededError(BackendError):
+    """Raised when backend quota or rate limit is exceeded."""
+    
+    def __init__(self, backend_id: str, quota_type: str):
+        super().__init__(
+            f"Quota exceeded for backend {backend_id}: {quota_type}",
+            "BACKEND_QUOTA_EXCEEDED"
+        )
+        self.backend_id = backend_id
+        self.quota_type = quota_type
+        self.details.update({
+            'backend_id': backend_id,
+            'quota_type': quota_type
+        })
+
+
+class BackendTimeoutError(BackendError):
+    """Raised when backend execution times out."""
+    
+    def __init__(self, backend_id: str, timeout_seconds: int):
+        super().__init__(
+            f"Timeout after {timeout_seconds}s for backend {backend_id}",
+            "BACKEND_TIMEOUT"
+        )
+        self.backend_id = backend_id
+        self.timeout_seconds = timeout_seconds
+        self.details.update({
+            'backend_id': backend_id,
+            'timeout_seconds': timeout_seconds
+        })
+
+
 class WorkflowError(OrchestratorError):
     """Base class for workflow-related errors."""
     pass

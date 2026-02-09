@@ -19,6 +19,7 @@ typing  # Built into Python 3.5+
 json  # Built into Python
 uuid  # Built into Python
 datetime  # Built into Python
+pyyaml>=6.0  # For YAML configuration files
 
 # Logging and monitoring
 logging  # Built into Python

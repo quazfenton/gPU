@@ -65,8 +65,9 @@ class HealthMonitor:
     
     def check_backend_health(self, backend: Backend) -> HealthStatus:
         """Check health of a specific backend."""
-        # Implementation will be added in task 4.1
-        pass
+        # TODO: Implementation will be added in task 4.1
+        # Default to UNKNOWN until real health checks are implemented
+        return HealthStatus.UNKNOWN
     
     def update_health_status(self, backend_id: str, status: HealthStatus):
         """Update health status for a backend."""

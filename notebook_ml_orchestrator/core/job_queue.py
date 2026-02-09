@@ -161,51 +161,53 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
         Args:
             job_id: Job ID to update
             status: New job status
-            result: Optional result of the job execution
+            result: Job result (for completed jobs)
+
+        Raises:
+            JobValidationError: If status transition is invalid
+            DatabaseError: If database operation fails
         """
-                result: Job result (for completed jobs)
+        with self._lock:
+            job = self.db.get_job(job_id)
+            if not job:
+                raise JobValidationError(f"Job {job_id} not found")
 
-            Raises:
-                JobValidationError: If status transition is invalid
-                DatabaseError: If database operation fails
-            """
-            with self._lock:
-                job = self.db.get_job(job_id)
-                if not job:
-                    raise JobValidationError(f"Job {job_id} not found")
+            # Validate status transition
+            JobStateManager.validate_transition(job, status)
 
-                # Validate status transition
-                JobStateManager.validate_transition(job, status)
+            # Update job
+            job.status = status
+            if status == JobStatus.RUNNING:
+                job.started_at = datetime.now()
+            elif status == JobStatus.COMPLETED:
+                job.completed_at = datetime.now()
+                if result:
+                    job.result = result
+            elif status == JobStatus.FAILED:
+                # Consolidate error message assignment for failed jobs
+                if isinstance(result, Exception) or isinstance(result, str):
+                    job.error = str(result)
+                elif result is not None:
+                    job.error = str(result) # Fallback for other types of results
 
-                # Update job
-                job.status = status
-                if status == JobStatus.RUNNING:
-                    job.started_at = datetime.now()
-                elif status == JobStatus.COMPLETED:
+                if not self.retry_policy.should_retry(job):
                     job.completed_at = datetime.now()
-                    if result:
-                        job.result = result
-                elif status == JobStatus.FAILED:
-                    if isinstance(result, Exception):
-                        job.result = str(result)
-                    if not self.retry_policy.should_retry(job):
-                        job.completed_at = datetime.now()
-                        job.error = str(result)
-                    else:
-                        job.retry_count += 1
-                        job.retry_at = datetime.now() + timedelta(
-                            seconds=self.retry_policy.get_retry_delay(job.retry_count)
-                        )
-                        job.error = str(result)
-                        job.status = JobStatus.RETRYING
-                        status = job.status
-                elif status == JobStatus.RETRYING:
+                    # job.error is already set
+                else:
                     job.retry_count += 1
                     job.retry_at = datetime.now() + timedelta(
                         seconds=self.retry_policy.get_retry_delay(job.retry_count)
                     )
-                elif isinstance(result, str):
-                    job.error = result
+                    # job.error is already set
+                    job.status = JobStatus.RETRYING
+                    status = job.status # Update local status variable for logging
+            elif status == JobStatus.RETRYING:
+                job.retry_count += 1
+                job.retry_at = datetime.now() + timedelta(
+                    seconds=self.retry_policy.get_retry_delay(job.retry_count)
+                )
+            elif isinstance(result, str): # This block handles string results if not caught by FAILED status
+                job.error = result
             
             if not self.db.update_job(job):
                 raise DatabaseError(f"Failed to update job {job_id}")
@@ -268,36 +270,36 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             limit: Maximum number of jobs to return
             
         Returns:
-                    List of jobs for the user
-                """
-                return self.db.get_user_jobs(user_id, limit)
+            List of jobs for the user
+        """
+        return self.db.get_user_jobs(user_id, limit)
 
-            def cancel_job(self, job_id: str) -> bool:
-                """
-                Cancel a job.
+    def cancel_job(self, job_id: str) -> bool:
+        """
+        Cancel a job.
 
-                Args:
-                    job_id: Job ID to cancel
+        Args:
+            job_id: Job ID to cancel
 
-                Returns:
-                    True if successful, False otherwise
-                """
-                try:
-                    with self._lock:
-                        job = self.db.get_job(job_id)
-                        if not job:
-                            return False
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self._lock:
+                job = self.db.get_job(job_id)
+                if not job:
+                    return False
 
-                        if job.status in [JobStatus.COMPLETED, JobStatus.CANCELLED]:
-                            return False  # Cannot cancel finished or already cancelled jobs
+                if job.status in [JobStatus.COMPLETED, JobStatus.CANCELLED]:
+                    return False  # Cannot cancel finished or already cancelled jobs
 
-                        if job.status == JobStatus.FAILED:
-                            # Validate state transition before cancelling a failed job
-                            JobStateManager.validate_transition(job, JobStatus.CANCELLED)
+                if job.status == JobStatus.FAILED:
+                    # Validate state transition before cancelling a failed job
+                    JobStateManager.validate_transition(job, JobStatus.CANCELLED)
 
-                        job.status = JobStatus.CANCELLED
-                        job.completed_at = datetime.now()
-                success = self.db.update_job(job)
+                job.status = JobStatus.CANCELLED
+                job.completed_at = datetime.now()
+                success = self.db.update_job(job) # Moved inside the lock
                 if success:
                     self.logger.info(f"Job {job_id} cancelled")
                 return success
@@ -317,52 +319,52 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             'total_jobs': sum(stats.values()),
             'by_status': stats,
             'queue_length': stats.get('queued', 0),
-                    'running_jobs': stats.get('running', 0)
-                }
+            'running_jobs': stats.get('running', 0)
+        }
 
-            def start_retry_processor(self):
-                """Start the retry processing thread."""
-                if self._retry_thread and self._retry_thread.is_alive():
-                    return
+    def start_retry_processor(self):
+        """Start the retry processing thread."""
+        if self._retry_thread and self._retry_thread.is_alive():
+            return
 
-                self._running = True
-                self._retry_thread = threading.Thread(target=self._process_retries, daemon=True)
-                self._retry_thread.start()
-                self.logger.info("Retry processor started")
+        self._running = True
+        self._retry_thread = threading.Thread(target=self._process_retries, daemon=True)
+        self._retry_thread.start()
+        self.logger.info("Retry processor started")
 
-            def stop_retry_processor(self):
-                """Stop the retry processing thread."""
-                self._running = False
-                if self._retry_thread:
-                    self._retry_thread.join(timeout=5.0)
-                self.logger.info("Retry processor stopped")
+    def stop_retry_processor(self):
+        """Stop the retry processing thread."""
+        self._running = False
+        if self._retry_thread:
+            self._retry_thread.join(timeout=5.0)
+        self.logger.info("Retry processor stopped")
 
-            def _process_retries(self):
-                """Process jobs scheduled for retry."""
-                while self._running:
-                    try:
-                        with self._lock:
-                            # Get jobs in retrying status
-                            retrying_jobs = self.db.get_jobs_by_status(JobStatus.RETRYING, limit=100)
+    def _process_retries(self):
+        """Process jobs scheduled for retry."""
+        while self._running:
+            try:
+                with self._lock:
+                    # Get jobs in retrying status
+                    retrying_jobs = self.db.get_jobs_by_status(JobStatus.RETRYING, limit=100)
+            
+                    for job in retrying_jobs: # Moved inside the lock
+                        retry_at_str = job.metadata.get('retry_at')
+                        if retry_at_str:
+                            retry_at = datetime.fromisoformat(retry_at_str)
+                            if datetime.now() >= retry_at:
+                                # Time to retry
+                                job.status = JobStatus.QUEUED
+                                job.started_at = None
+                                job.completed_at = None
+                                job.error = None
+                                
+                                if 'retry_at' in job.metadata:
+                                    del job.metadata['retry_at']
+                                
+                                if self.db.update_job(job):
+                                    self.logger.info(f"Job {job.id} moved back to queue for retry")
                 
-                for job in retrying_jobs:
-                    retry_at_str = job.metadata.get('retry_at')
-                    if retry_at_str:
-                        retry_at = datetime.fromisoformat(retry_at_str)
-                        if datetime.now() >= retry_at:
-                            # Time to retry
-                            job.status = JobStatus.QUEUED
-                            job.started_at = None
-                            job.completed_at = None
-                            job.error = None
-                            
-                            if 'retry_at' in job.metadata:
-                                del job.metadata['retry_at']
-                            
-                            if self.db.update_job(job):
-                                self.logger.info(f"Job {job.id} moved back to queue for retry")
-                
-                # Sleep before next check
+                # Sleep before next check (outside the lock, but inside the try)
                 time.sleep(10)
                 
             except Exception as e:

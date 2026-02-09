@@ -119,31 +119,30 @@ def enqueue(
     job_id = str(uuid.uuid4())
     now = time.time()
     
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        INSERT INTO jobs (
-            id, template, payload, route, status, result, error,
-            retries, created, updated, workflow_id, parent_job_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        job_id,
-        template,
-        json.dumps(payload),
-        route,
-        JobStatus.QUEUED.value,
-        None,
-        None,
-        0,
-        now,
-        now,
-        workflow_id,
-        parent_job_id
-    ))
-    
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(str(db_path)) as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO jobs (
+                id, template, payload, route, status, result, error,
+                retries, created, updated, workflow_id, parent_job_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            job_id,
+            template,
+            json.dumps(payload),
+            route,
+            JobStatus.QUEUED.value,
+            None,
+            None,
+            0,
+            now,
+            now,
+            workflow_id,
+            parent_job_id
+        ))
+        
+        conn.commit()
     
     return job_id
 
@@ -195,6 +194,7 @@ def next_job(
     cursor = conn.cursor()
 
     # Use a single atomic UPDATE with RETURNING to claim the next job
+    # Use a single atomic UPDATE with RETURNING to claim the next job
     query = """
         UPDATE jobs
         SET status = ?, updated = ?
@@ -223,14 +223,6 @@ def next_job(
         conn.close()
         return None
     
-    job_id = row[0]
-    
-    # Claim the job by setting status to running
-    cursor.execute("""
-        UPDATE jobs SET status = ?, updated = ?
-        WHERE id = ?
-    """, (JobStatus.RUNNING.value, time.time(), job_id))
-    
     conn.commit()
     conn.close()
     
@@ -248,7 +240,6 @@ def next_job(
         workflow_id=row[10],
         parent_job_id=row[11]
     )
-
 
 def complete(
     job_id: str,

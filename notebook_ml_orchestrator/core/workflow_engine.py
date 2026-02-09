@@ -119,7 +119,6 @@ class WorkflowEngine(WorkflowEngineInterface, LoggerMixin):
         workflow = Workflow(
             definition=definition,
             created_at=datetime.now(),
-            status=WorkflowStatus.CREATED,
             updated_at=datetime.now()
         )
         

@@ -74,7 +74,7 @@ class Template(ABC):
         self.inputs = self.inputs if hasattr(self, 'inputs') else []
         self.outputs = self.outputs if hasattr(self, 'outputs') else []
         self.routing = self.routing if hasattr(self, 'routing') else [RouteType.LOCAL]
-        self.pip_packages = list(self.__class__.__dict__.get('pip_packages', []))
+        self.pip_packages = list(getattr(self, 'pip_packages', []))
     
     def setup(self) -> None:
         """

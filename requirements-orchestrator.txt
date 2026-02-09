@@ -1,0 +1,39 @@
+# Core dependencies for Notebook ML Orchestrator
+# Database and persistence
+
+# Testing framework
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+hypothesis>=6.70.0
+
+# Async and concurrency
+asyncio  # Built into Python
+threading  # Built into Python
+concurrent.futures  # Built into Python
+
+# Data handling and serialization
+dataclasses  # Built into Python 3.7+
+typing  # Built into Python 3.5+
+json  # Built into Python
+uuid  # Built into Python
+datetime  # Built into Python
+
+# Logging and monitoring
+logging  # Built into Python
+
+# Future dependencies (will be added in later tasks)
+# gradio>=3.40.0  # For GUI interface
+# fastapi>=0.100.0  # For REST API
+# uvicorn>=0.23.0  # For API server
+# pydantic>=2.0.0  # For data validation
+# requests>=2.31.0  # For HTTP requests
+# aiohttp>=3.8.0  # For async HTTP
+# numpy>=1.24.0  # For numerical operations
+# pandas>=2.0.0  # For data manipulation
+# pillow>=10.0.0  # For image processing
+# librosa>=0.10.0  # For audio processing
+# transformers>=4.30.0  # For ML models
+# torch>=2.0.0  # For deep learning
+# modal>=0.55.0  # For Modal backend
+# huggingface-hub>=0.16.0  # For HuggingFace backend

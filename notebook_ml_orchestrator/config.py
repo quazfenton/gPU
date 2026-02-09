@@ -4,6 +4,12 @@ Configuration management for the Notebook ML Orchestrator.
 This module provides centralized configuration management with environment
 variable support and validation.
 """
+"""
+Configuration management for the Notebook ML Orchestrator.
+
+This module provides centralized configuration management with environment
+variable support and validation.
+"""
 
 import os
 from pathlib import Path
@@ -25,11 +31,9 @@ class DatabaseConfig:
         return cls(
             path=os.getenv('ORCHESTRATOR_DB_PATH', cls.path),
             timeout=float(os.getenv('ORCHESTRATOR_DB_TIMEOUT', cls.timeout)),
-                        max_connections=int(os.getenv('ORCHESTRATOR_DB_MAX_CONNECTIONS', cls.max_connections)),
-                        enable_wal=os.getenv('ORCHESTRATOR_DB_ENABLE_WAL', 'true').lower() == 'true'
+            max_connections=int(os.getenv('ORCHESTRATOR_DB_MAX_CONNECTIONS', cls.max_connections)),
+            enable_wal=os.getenv('ORCHESTRATOR_DB_ENABLE_WAL', 'true').lower() == 'true'
         )
-
-        max_connections=int(os.getenv('ORCHESTRATOR_DB_MAX_CONNECTIONS', cls.max_connections)),
         enable_wal=os.getenv('ORCHESTRATOR_DB_ENABLE_WAL', 'true').lower() == 'true'
     )
 

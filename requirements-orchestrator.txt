@@ -14,13 +14,13 @@ hypothesis>=6.70.0
 
 # Data handling and serialization
 # dataclasses  # Built into Python 3.7+
-typing  # Built into Python 3.5+
-json  # Built into Python
-uuid  # Built into Python
-datetime  # Built into Python
+# typing  # Built into Python 3.5+
+# json  # Built into Python
+# uuid  # Built into Python
+# datetime  # Built into Python
 
 # Logging and monitoring
-logging  # Built into Python
+# logging  # Built into Python
 
 # Future dependencies (will be added in later tasks)
 # gradio>=3.40.0  # For GUI interface

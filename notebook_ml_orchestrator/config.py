@@ -4,12 +4,6 @@ Configuration management for the Notebook ML Orchestrator.
 This module provides centralized configuration management with environment
 variable support and validation.
 """
-
-@dataclass
-class DatabaseConfig:
-    """Database configuration settings."""
-    path: str = "orchestrator.db"
-    timeout: float = 30.0
     max_connections: int = 10
     enable_wal: bool = True
     

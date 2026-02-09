@@ -179,7 +179,7 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             job.status = status
             if status == JobStatus.RUNNING:
                 job.started_at = datetime.now()
-            elif status == JobStatus.COMPLETED:
+            elif status == JobStatus.COMPLETED or (status == JobStatus.FAILED and not self.retry_policy.should_retry(job)):
                 job.completed_at = datetime.now()
                 if result:
                     job.result = result

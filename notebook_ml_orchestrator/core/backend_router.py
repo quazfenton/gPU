@@ -234,7 +234,8 @@ class MultiBackendRouter(BackendRouterInterface, LoggerMixin):
         Returns:
             Backend instance or None if not found
         """
-        return self.backends.get(backend_id)
+        with self._lock:
+            return self.backends.get(backend_id)
     
     def list_backends(self) -> List[Backend]:
         """
@@ -243,7 +244,8 @@ class MultiBackendRouter(BackendRouterInterface, LoggerMixin):
         Returns:
             List of all backends
         """
-        return list(self.backends.values())
+        with self._lock:
+            return list(self.backends.values())
     
     def get_routing_statistics(self) -> Dict:
         """

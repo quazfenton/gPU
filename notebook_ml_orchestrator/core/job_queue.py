@@ -161,51 +161,53 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
         Args:
             job_id: Job ID to update
             status: New job status
-            result: Optional result of the job execution
+            result: Job result (for completed jobs)
+
+        Raises:
+            JobValidationError: If status transition is invalid
+            DatabaseError: If database operation fails
         """
-                result: Job result (for completed jobs)
+        with self._lock:
+            job = self.db.get_job(job_id)
+            if not job:
+                raise JobValidationError(f"Job {job_id} not found")
 
-            Raises:
-                JobValidationError: If status transition is invalid
-                DatabaseError: If database operation fails
-            """
-            with self._lock:
-                job = self.db.get_job(job_id)
-                if not job:
-                    raise JobValidationError(f"Job {job_id} not found")
+            # Validate status transition
+            JobStateManager.validate_transition(job, status)
 
-                # Validate status transition
-                JobStateManager.validate_transition(job, status)
+            # Update job
+            job.status = status
+            if status == JobStatus.RUNNING:
+                job.started_at = datetime.now()
+            elif status == JobStatus.COMPLETED:
+                job.completed_at = datetime.now()
+                if result:
+                    job.result = result
+            elif status == JobStatus.FAILED:
+                # Consolidate error message assignment for failed jobs
+                if isinstance(result, Exception) or isinstance(result, str):
+                    job.error = str(result)
+                elif result is not None:
+                    job.error = str(result) # Fallback for other types of results
 
-                # Update job
-                job.status = status
-                if status == JobStatus.RUNNING:
-                    job.started_at = datetime.now()
-                elif status == JobStatus.COMPLETED:
+                if not self.retry_policy.should_retry(job):
                     job.completed_at = datetime.now()
-                    if result:
-                        job.result = result
-                elif status == JobStatus.FAILED:
-                    if isinstance(result, Exception):
-                        job.result = str(result)
-                    if not self.retry_policy.should_retry(job):
-                        job.completed_at = datetime.now()
-                        job.error = str(result)
-                    else:
-                        job.retry_count += 1
-                        job.retry_at = datetime.now() + timedelta(
-                            seconds=self.retry_policy.get_retry_delay(job.retry_count)
-                        )
-                        job.error = str(result)
-                        job.status = JobStatus.RETRYING
-                        status = job.status
-                elif status == JobStatus.RETRYING:
+                    # job.error is already set
+                else:
                     job.retry_count += 1
                     job.retry_at = datetime.now() + timedelta(
                         seconds=self.retry_policy.get_retry_delay(job.retry_count)
                     )
-                elif isinstance(result, str):
-                    job.error = result
+                    # job.error is already set
+                    job.status = JobStatus.RETRYING
+                    status = job.status # Update local status variable for logging
+            elif status == JobStatus.RETRYING:
+                job.retry_count += 1
+                job.retry_at = datetime.now() + timedelta(
+                    seconds=self.retry_policy.get_retry_delay(job.retry_count)
+                )
+            elif isinstance(result, str): # This block handles string results if not caught by FAILED status
+                job.error = result
             
             if not self.db.update_job(job):
                 raise DatabaseError(f"Failed to update job {job_id}")

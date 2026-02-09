@@ -194,6 +194,7 @@ def next_job(
     cursor = conn.cursor()
 
     # Use a single atomic UPDATE with RETURNING to claim the next job
+    # Use a single atomic UPDATE with RETURNING to claim the next job
     query = """
         UPDATE jobs
         SET status = ?, updated = ?
@@ -222,14 +223,6 @@ def next_job(
         conn.close()
         return None
     
-    job_id = row[0]
-    
-    # Claim the job by setting status to running
-    cursor.execute("""
-        UPDATE jobs SET status = ?, updated = ?
-        WHERE id = ?
-    """, (JobStatus.RUNNING.value, time.time(), job_id))
-    
     conn.commit()
     conn.close()
     
@@ -247,7 +240,6 @@ def next_job(
         workflow_id=row[10],
         parent_job_id=row[11]
     )
-
 
 def complete(
     job_id: str,

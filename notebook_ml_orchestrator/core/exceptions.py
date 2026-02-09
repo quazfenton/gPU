@@ -10,7 +10,6 @@ from typing import Any, Dict, Optional
 
 class OrchestratorError(Exception):
     """Base exception class for all orchestrator errors."""
-    
     def __init__(self, message: str, error_code: str = None, details: Dict[str, Any] = None):
         super().__init__(message)
         self.message = message

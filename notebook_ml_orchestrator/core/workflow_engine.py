@@ -222,7 +222,9 @@ class WorkflowEngine(WorkflowEngineInterface, LoggerMixin):
             Current workflow status
         """
         execution = self.executions.get(execution_id)
-        return execution.status if execution else WorkflowStatus.FAILED
+        if execution is None:
+            raise WorkflowValidationError(f"Execution {execution_id} not found")
+        return execution.status
     
     def get_workflow_execution(self, execution_id: str) -> Optional[WorkflowExecution]:
         """

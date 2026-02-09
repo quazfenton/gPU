@@ -58,10 +58,6 @@ class Template(ABC):
     # Supported routing backends
     routing: List[RouteType]
 
-    def __init__(self):
-        self.inputs = []
-        self.outputs = []
-        self.routing = [RouteType.LOCAL]
     # Resource requirements
     gpu_required: bool = False
     gpu_type: Optional[str] = None  # T4, A10G, A100
@@ -69,7 +65,7 @@ class Template(ABC):
     timeout_sec: int = 300
     
     # Dependencies
-    pip_packages: List[str] = field(default_factory=list)
+    pip_packages: List[str] = []
     
     _initialized: bool = False
     
@@ -78,7 +74,7 @@ class Template(ABC):
         self.inputs = self.inputs if hasattr(self, 'inputs') else []
         self.outputs = self.outputs if hasattr(self, 'outputs') else []
         self.routing = self.routing if hasattr(self, 'routing') else [RouteType.LOCAL]
-        self.pip_packages = self.pip_packages if hasattr(self, 'pip_packages') else []
+        self.pip_packages = list(self.__class__.__dict__.get('pip_packages', []))
     
     def setup(self) -> None:
         """

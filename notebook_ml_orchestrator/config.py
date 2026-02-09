@@ -4,12 +4,6 @@ Configuration management for the Notebook ML Orchestrator.
 This module provides centralized configuration management with environment
 variable support and validation.
 """
-"""
-Configuration management for the Notebook ML Orchestrator.
-
-This module provides centralized configuration management with environment
-variable support and validation.
-"""
 
 import os
 from pathlib import Path

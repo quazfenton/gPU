@@ -8,12 +8,12 @@ pytest-cov>=4.0.0
 hypothesis>=6.70.0
 
 # Async and concurrency
-asyncio  # Built into Python
-threading  # Built into Python
-concurrent.futures  # Built into Python
+# asyncio  # Built into Python
+# threading  # Built into Python
+# concurrent.futures  # Built into Python
 
 # Data handling and serialization
-dataclasses  # Built into Python 3.7+
+# dataclasses  # Built into Python 3.7+
 typing  # Built into Python 3.5+
 json  # Built into Python
 uuid  # Built into Python

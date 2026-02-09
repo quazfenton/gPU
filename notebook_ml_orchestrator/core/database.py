@@ -306,49 +306,49 @@ class DatabaseManager:
         from .models import JobResult  # Import here to avoid circular imports
 
         job = Job(
-                id=row['id'],
-                user_id=row['user_id'],
-                template_name=row['template_name'],
-                inputs=json.loads(row['inputs']),
-                status=JobStatus(row['status']),
-                backend_id=row['backend_id'],
-                created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.now(),
-                started_at=datetime.fromisoformat(row['started_at']) if row['started_at'] else None,
-                completed_at=datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
-                error=row['error'],
-                retry_count=row['retry_count'],
-                priority=row['priority'],
-                metadata=json.loads(row['metadata']) if row['metadata'] else {}
-            )
-            if row['result']:
-                result_data = json.loads(row['result'])
-                job.result = JobResult(**result_data)
-            return job
+            id=row['id'],
+            user_id=row['user_id'],
+            template_name=row['template_name'],
+            inputs=json.loads(row['inputs']),
+            status=JobStatus(row['status']),
+            backend_id=row['backend_id'],
+            created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.now(),
+            started_at=datetime.fromisoformat(row['started_at']) if row['started_at'] else None,
+            completed_at=datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
+            error=row['error'],
+            retry_count=row['retry_count'],
+            priority=row['priority'],
+            metadata=json.loads(row['metadata']) if row['metadata'] else {}
+        )
+        if row['result']:
+            result_data = json.loads(row['result'])
+            job.result = JobResult(**result_data)
+        return job
 
-        def cleanup_old_jobs(self, days_old: int = 30) -> int:
-            """
-            Clean up old completed jobs.
+    def cleanup_old_jobs(self, days_old: int = 30) -> int:
+        """
+        Clean up old completed jobs.
 
-            Args:
-                days_old: Number of days after which to delete completed jobs
-            """
+        Args:
+            days_old: Number of days after which to delete completed jobs
 
-            Returns:
-                Number of jobs deleted
-            """
-            try:
-                with self.get_cursor() as cursor:
-                    cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
-                    cursor.execute("""
-                        DELETE FROM jobs
-                        WHERE status IN ('completed', 'failed', 'cancelled')
-                        AND created_at < ?
-                    """, (cutoff,))
-                    return cursor.rowcount
-                                return cursor.rowcount
-                        except Exception as e:
-                            logger.error(f"Failed to cleanup old jobs: {e}")
-                            return 0
+        Returns:
+            Number of jobs deleted
+        """
+        try:
+            with self.get_cursor() as cursor:
+                # Assuming timedelta is imported or available via datetime.timedelta
+                from datetime import timedelta
+                cutoff = (datetime.now() - timedelta(days=days_old)).isoformat()
+                cursor.execute("""
+                    DELETE FROM jobs
+                    WHERE status IN ('completed', 'failed', 'cancelled')
+                    AND created_at < ?
+                """, (cutoff,))
+                return cursor.rowcount
+        except Exception as e:
+            logger.error(f"Failed to cleanup old jobs: {e}")
+            return 0
     def get_job_statistics(self) -> Dict[str, int]:
         """
         Get job statistics by status.

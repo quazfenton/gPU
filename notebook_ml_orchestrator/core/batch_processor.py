@@ -176,37 +176,39 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
                 raise BatchValidationError(f"Batch {batch_id} not found")
             
             if batch.status != BatchStatus.QUEUED:
-                    # Mark batch as running
-                    batch.status = BatchStatus.RUNNING
-                    batch.started_at = datetime.now()
+                raise BatchValidationError(f"Batch {batch_id} is not in QUEUED state")
 
-                    # For now, just mark all items as completed
-                    # Full execution logic will be implemented in task 7.1
-                    all_items_successful = True # This flag will track if ALL items ultimately succeeded
-                    for item in batch.items:
-                        item.status = JobStatus.COMPLETED
-                        item.started_at = datetime.now()
-                        item.completed_at = datetime.now()
-                        item.result = JobResult(
-                            success=True, # Placeholder: always True for now
-                            outputs={"placeholder": "item completed"},
-                            execution_time_seconds=1.0
-                        )
-                        batch.progress.completed_items += 1
-                        # In future implementation (task 7.1), this flag would be set to False
-                        # if any item.result.success is False.
+            # Mark batch as running
+            batch.status = BatchStatus.RUNNING
+            batch.started_at = datetime.now()
 
-                        # Determine final batch status and completion timestamp based on item outcomes
-                        if all_items_successful:
-                            batch.status = BatchStatus.COMPLETED
-                            batch.completed_at = datetime.now() # Batch truly completed successfully
-                        else:
-                            # If not all items were successful (e.g., some failed), the batch itself is considered FAILED.
-                            # In this interpretation, 'completed_at' specifically signifies successful completion.
-                            batch.status = BatchStatus.FAILED
-                            # batch.completed_at should remain None here, as it wasn't fully successful
-                        self.logger.info(f"Batch {batch_id} execution completed")
-                        return batch
+            # For now, just mark all items as completed
+            # Full execution logic will be implemented in task 7.1
+            all_items_successful = True # This flag will track if ALL items ultimately succeeded
+            for item in batch.items:
+                item.status = JobStatus.COMPLETED
+                item.started_at = datetime.now()
+                item.completed_at = datetime.now()
+                item.result = JobResult(
+                    success=True, # Placeholder: always True for now
+                    outputs={"placeholder": "item completed"},
+                    execution_time_seconds=1.0
+                )
+                batch.progress.completed_items += 1
+                # In future implementation (task 7.1), this flag would be set to False
+                # if any item.result.success is False.
+
+            # Determine final batch status and completion timestamp based on item outcomes
+            if all_items_successful:
+                batch.status = BatchStatus.COMPLETED
+                batch.completed_at = datetime.now() # Batch truly completed successfully
+            else:
+                # If not all items were successful (e.g., some failed), the batch itself is considered FAILED.
+                # In this interpretation, 'completed_at' specifically signifies successful completion.
+                batch.status = BatchStatus.FAILED
+                # batch.completed_at should remain None here, as it wasn't fully successful
+            self.logger.info(f"Batch {batch_id} execution completed")
+            return batch
             def track_batch_progress(self, batch_id: str) -> BatchProgress:
                 """
                 Track batch progress.

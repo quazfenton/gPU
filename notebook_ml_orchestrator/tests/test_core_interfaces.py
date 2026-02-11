@@ -7,7 +7,6 @@ of the orchestration system.
 
 import pytest
 from datetime import datetime
-from typing import Dict, Any
 
 from notebook_ml_orchestrator.core.interfaces import Job, Workflow, WorkflowExecution, BatchJob
 from notebook_ml_orchestrator.core.models import (

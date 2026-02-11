@@ -101,7 +101,7 @@ def enqueue(
 ) -> str:
     """
     Add a job to the queue.
-    
+
     Args:
         template: Template name to execute
         payload: Input data for the template
@@ -109,42 +109,44 @@ def enqueue(
         workflow_id: Optional workflow this job belongs to
         parent_job_id: Optional parent job for chaining
         db_path: Optional database path
-        
+
     Returns:
         Job ID
     """
     db_path = db_path or get_db_path()
     init_db(db_path)
-    
+
     job_id = str(uuid.uuid4())
     now = time.time()
-    
+
     conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        INSERT INTO jobs (
-            id, template, payload, route, status, result, error,
-            retries, created, updated, workflow_id, parent_job_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        job_id,
-        template,
-        json.dumps(payload),
-        route,
-        JobStatus.QUEUED.value,
-        None,
-        None,
-        0,
-        now,
-        now,
-        workflow_id,
-        parent_job_id
-    ))
-    
-    conn.commit()
-    conn.close()
-    
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO jobs (
+                id, template, payload, route, status, result, error,
+                retries, created, updated, workflow_id, parent_job_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            job_id,
+            template,
+            json.dumps(payload),
+            route,
+            JobStatus.QUEUED.value,
+            None,
+            None,
+            0,
+            now,
+            now,
+            workflow_id,
+            parent_job_id
+        ))
+
+        conn.commit()
+    finally:
+        conn.close()
+
     return job_id
 
 
@@ -180,269 +182,53 @@ def next_job(
 ) -> Optional[Job]:
     """
     Fetch and claim the next queued job.
-    
+
     Args:
         route: Optional route filter
         db_path: Optional database path
-        
+
     Returns:
         Job object or None if no jobs available
     """
     db_path = db_path or get_db_path()
     init_db(db_path)
-    
+
     conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    # Build query with optional route filter
-    query = """
-        SELECT id, template, payload, route, status, result, error,
-               retries, created, updated, workflow_id, parent_job_id
-        FROM jobs
-        WHERE status IN (?, ?)
-    """
-    params = [JobStatus.QUEUED.value, JobStatus.RETRY.value]
-    
-    if route:
-        query += " AND route = ?"
-        params.append(route)
-    
-    query += " ORDER BY created LIMIT 1"
-    
-    cursor.execute(query, params)
-    row = cursor.fetchone()
-    
-    if not row:
-        conn.close()
-        return None
-    
-    job_id = row[0]
-    
-    # Claim the job by setting status to running
-    cursor.execute("""
-        UPDATE jobs SET status = ?, updated = ?
-        WHERE id = ?
-    """, (JobStatus.RUNNING.value, time.time(), job_id))
-    
-    conn.commit()
-    conn.close()
-    
-    return Job(
-        id=row[0],
-        template=row[1],
-        payload=json.loads(row[2]),
-        route=row[3],
-        status=JobStatus(row[4]),
-        result=json.loads(row[5]) if row[5] else None,
-        error=row[6],
-        retries=row[7],
-        created=row[8],
-        updated=row[9],
-        workflow_id=row[10],
-        parent_job_id=row[11]
-    )
+    try:
+        cursor = conn.cursor()
 
+        # Build query with optional route filter
+        query = """
+            SELECT id, template, payload, route, status, result, error,
+                   retries, created, updated, workflow_id, parent_job_id
+            FROM jobs
+            WHERE status IN (?, ?)
+        """
+        params = [JobStatus.QUEUED.value, JobStatus.RETRY.value]
 
-def complete(
-    job_id: str,
-    result: Dict[str, Any],
-    db_path: Optional[Path] = None
-) -> None:
-    """
-    Mark a job as completed with result.
-    
-    Args:
-        job_id: Job ID
-        result: Output data from template execution
-        db_path: Optional database path
-    """
-    db_path = db_path or get_db_path()
-    
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        UPDATE jobs
-        SET status = ?, result = ?, updated = ?
-        WHERE id = ?
-    """, (JobStatus.DONE.value, json.dumps(result), time.time(), job_id))
-    
-    conn.commit()
-    conn.close()
+        if route:
+            query += " AND route = ?"
+            params.append(route)
 
+        query += " ORDER BY created LIMIT 1"
 
-def fail(
-    job_id: str,
-    error: str,
-    retry: bool = False,
-    max_retries: int = 3,
-    db_path: Optional[Path] = None
-) -> None:
-    """
-    Mark a job as failed.
-    
-    Args:
-        job_id: Job ID
-        error: Error message
-        retry: Whether to retry the job
-        max_retries: Maximum retry attempts
-        db_path: Optional database path
-    """
-    db_path = db_path or get_db_path()
-    
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    # Get current retry count
-    cursor.execute("SELECT retries FROM jobs WHERE id = ?", (job_id,))
-    row = cursor.fetchone()
-    current_retries = row[0] if row else 0
-    
-    if retry and current_retries < max_retries:
-        status = JobStatus.RETRY.value
-        new_retries = current_retries + 1
-    else:
-        status = JobStatus.FAILED.value
-        new_retries = current_retries
-    
-    cursor.execute("""
-        UPDATE jobs
-        SET status = ?, error = ?, retries = ?, updated = ?
-        WHERE id = ?
-    """, (status, error, new_retries, time.time(), job_id))
-    
-    conn.commit()
-    conn.close()
+        cursor.execute(query, params)
+        row = cursor.fetchone()
 
+        if not row:
+            return None
 
-def cancel(job_id: str, db_path: Optional[Path] = None) -> bool:
-    """
-    Cancel a queued job.
-    
-    Args:
-        job_id: Job ID
-        db_path: Optional database path
-        
-    Returns:
-        True if cancelled, False if job was already running/done
-    """
-    db_path = db_path or get_db_path()
-    
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        UPDATE jobs
-        SET status = ?, updated = ?
-        WHERE id = ? AND status = ?
-    """, (JobStatus.CANCELLED.value, time.time(), job_id, JobStatus.QUEUED.value))
-    
-    affected = cursor.rowcount
-    conn.commit()
-    conn.close()
-    
-    return affected > 0
+        job_id = row[0]
 
+        # Claim the job by setting status to running
+        cursor.execute("""
+            UPDATE jobs SET status = ?, updated = ?
+            WHERE id = ?
+        """, (JobStatus.RUNNING.value, time.time(), job_id))
 
-def get_job(job_id: str, db_path: Optional[Path] = None) -> Optional[Job]:
-    """
-    Get a job by ID.
-    
-    Args:
-        job_id: Job ID
-        db_path: Optional database path
-        
-    Returns:
-        Job object or None
-    """
-    db_path = db_path or get_db_path()
-    init_db(db_path)
-    
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT id, template, payload, route, status, result, error,
-               retries, created, updated, workflow_id, parent_job_id
-        FROM jobs WHERE id = ?
-    """, (job_id,))
-    
-    row = cursor.fetchone()
-    conn.close()
-    
-    if not row:
-        return None
-    
-    return Job(
-        id=row[0],
-        template=row[1],
-        payload=json.loads(row[2]),
-        route=row[3],
-        status=JobStatus(row[4]),
-        result=json.loads(row[5]) if row[5] else None,
-        error=row[6],
-        retries=row[7],
-        created=row[8],
-        updated=row[9],
-        workflow_id=row[10],
-        parent_job_id=row[11]
-    )
+        conn.commit()
 
-
-def list_jobs(
-    status: Optional[JobStatus] = None,
-    template: Optional[str] = None,
-    workflow_id: Optional[str] = None,
-    limit: int = 100,
-    db_path: Optional[Path] = None
-) -> List[Job]:
-    """
-    List jobs with optional filters.
-    
-    Args:
-        status: Filter by status
-        template: Filter by template name
-        workflow_id: Filter by workflow
-        limit: Maximum jobs to return
-        db_path: Optional database path
-        
-    Returns:
-        List of Job objects
-    """
-    db_path = db_path or get_db_path()
-    init_db(db_path)
-    
-    conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    query = """
-        SELECT id, template, payload, route, status, result, error,
-               retries, created, updated, workflow_id, parent_job_id
-        FROM jobs WHERE 1=1
-    """
-    params = []
-    
-    if status:
-        query += " AND status = ?"
-        params.append(status.value)
-    
-    if template:
-        query += " AND template = ?"
-        params.append(template)
-    
-    if workflow_id:
-        query += " AND workflow_id = ?"
-        params.append(workflow_id)
-    
-    query += " ORDER BY created DESC LIMIT ?"
-    params.append(limit)
-    
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    conn.close()
-    
-    return [
-        Job(
+        return Job(
             id=row[0],
             template=row[1],
             payload=json.loads(row[2]),
@@ -456,36 +242,265 @@ def list_jobs(
             workflow_id=row[10],
             parent_job_id=row[11]
         )
-        for row in rows
-    ]
+    finally:
+        conn.close()
+
+
+def complete(
+    job_id: str,
+    result: Dict[str, Any],
+    db_path: Optional[Path] = None
+) -> None:
+    """
+    Mark a job as completed with result.
+
+    Args:
+        job_id: Job ID
+        result: Output data from template execution
+        db_path: Optional database path
+    """
+    db_path = db_path or get_db_path()
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE jobs
+            SET status = ?, result = ?, updated = ?
+            WHERE id = ?
+        """, (JobStatus.DONE.value, json.dumps(result), time.time(), job_id))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def fail(
+    job_id: str,
+    error: str,
+    retry: bool = False,
+    max_retries: int = 3,
+    db_path: Optional[Path] = None
+) -> None:
+    """
+    Mark a job as failed.
+
+    Args:
+        job_id: Job ID
+        error: Error message
+        retry: Whether to retry the job
+        max_retries: Maximum retry attempts
+        db_path: Optional database path
+    """
+    db_path = db_path or get_db_path()
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.cursor()
+
+        # Get current retry count
+        cursor.execute("SELECT retries FROM jobs WHERE id = ?", (job_id,))
+        row = cursor.fetchone()
+        current_retries = row[0] if row else 0
+
+        if retry and current_retries < max_retries:
+            status = JobStatus.RETRY.value
+            new_retries = current_retries + 1
+        else:
+            status = JobStatus.FAILED.value
+            new_retries = current_retries
+
+        cursor.execute("""
+            UPDATE jobs
+            SET status = ?, error = ?, retries = ?, updated = ?
+            WHERE id = ?
+        """, (status, error, new_retries, time.time(), job_id))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cancel(job_id: str, db_path: Optional[Path] = None) -> bool:
+    """
+    Cancel a queued job.
+
+    Args:
+        job_id: Job ID
+        db_path: Optional database path
+
+    Returns:
+        True if cancelled, False if job was already running/done
+    """
+    db_path = db_path or get_db_path()
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE jobs
+            SET status = ?, updated = ?
+            WHERE id = ? AND status = ?
+        """, (JobStatus.CANCELLED.value, time.time(), job_id, JobStatus.QUEUED.value))
+
+        affected = cursor.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+
+    return affected > 0
+
+
+def get_job(job_id: str, db_path: Optional[Path] = None) -> Optional[Job]:
+    """
+    Get a job by ID.
+
+    Args:
+        job_id: Job ID
+        db_path: Optional database path
+
+    Returns:
+        Job object or None
+    """
+    db_path = db_path or get_db_path()
+    init_db(db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, template, payload, route, status, result, error,
+                   retries, created, updated, workflow_id, parent_job_id
+            FROM jobs WHERE id = ?
+        """, (job_id,))
+
+        row = cursor.fetchone()
+
+        if not row:
+            return None
+
+        return Job(
+            id=row[0],
+            template=row[1],
+            payload=json.loads(row[2]),
+            route=row[3],
+            status=JobStatus(row[4]),
+            result=json.loads(row[5]) if row[5] else None,
+            error=row[6],
+            retries=row[7],
+            created=row[8],
+            updated=row[9],
+            workflow_id=row[10],
+            parent_job_id=row[11]
+        )
+    finally:
+        conn.close()
+
+
+def list_jobs(
+    status: Optional[JobStatus] = None,
+    template: Optional[str] = None,
+    workflow_id: Optional[str] = None,
+    limit: int = 100,
+    db_path: Optional[Path] = None
+) -> List[Job]:
+    """
+    List jobs with optional filters.
+
+    Args:
+        status: Filter by status
+        template: Filter by template name
+        workflow_id: Filter by workflow
+        limit: Maximum jobs to return
+        db_path: Optional database path
+
+    Returns:
+        List of Job objects
+    """
+    db_path = db_path or get_db_path()
+    init_db(db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cursor = conn.cursor()
+
+        query = """
+            SELECT id, template, payload, route, status, result, error,
+                   retries, created, updated, workflow_id, parent_job_id
+            FROM jobs WHERE 1=1
+        """
+        params = []
+
+        if status:
+            query += " AND status = ?"
+            params.append(status.value)
+
+        if template:
+            query += " AND template = ?"
+            params.append(template)
+
+        if workflow_id:
+            query += " AND workflow_id = ?"
+            params.append(workflow_id)
+
+        query += " ORDER BY created DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        return [
+            Job(
+                id=row[0],
+                template=row[1],
+                payload=json.loads(row[2]),
+                route=row[3],
+                status=JobStatus(row[4]),
+                result=json.loads(row[5]) if row[5] else None,
+                error=row[6],
+                retries=row[7],
+                created=row[8],
+                updated=row[9],
+                workflow_id=row[10],
+                parent_job_id=row[11]
+            )
+            for row in rows
+        ]
+    finally:
+        conn.close()
 
 
 def get_queue_stats(db_path: Optional[Path] = None) -> Dict[str, int]:
     """
     Get queue statistics.
-    
+
     Args:
         db_path: Optional database path
-        
+
     Returns:
         Dict with counts by status
     """
     db_path = db_path or get_db_path()
     init_db(db_path)
-    
+
     conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT status, COUNT(*) FROM jobs GROUP BY status
-    """)
-    
-    stats = {s.value: 0 for s in JobStatus}
-    for row in cursor.fetchall():
-        stats[row[0]] = row[1]
-    
-    conn.close()
-    return stats
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT status, COUNT(*) FROM jobs GROUP BY status
+        """)
+
+        stats = {s.value: 0 for s in JobStatus}
+        for row in cursor.fetchall():
+            stats[row[0]] = row[1]
+
+        return stats
+    finally:
+        conn.close()
 
 
 def clear_completed(
@@ -494,30 +509,32 @@ def clear_completed(
 ) -> int:
     """
     Delete completed jobs older than specified hours.
-    
+
     Args:
         older_than_hours: Delete jobs older than this
         db_path: Optional database path
-        
+
     Returns:
         Number of jobs deleted
     """
     db_path = db_path or get_db_path()
-    
+
     cutoff = time.time() - (older_than_hours * 3600)
-    
+
     conn = sqlite3.connect(str(db_path))
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        DELETE FROM jobs
-        WHERE status IN (?, ?) AND updated < ?
-    """, (JobStatus.DONE.value, JobStatus.CANCELLED.value, cutoff))
-    
-    deleted = cursor.rowcount
-    conn.commit()
-    conn.close()
-    
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            DELETE FROM jobs
+            WHERE status IN (?, ?) AND updated < ?
+        """, (JobStatus.DONE.value, JobStatus.CANCELLED.value, cutoff))
+
+        deleted = cursor.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+
     return deleted
 
 

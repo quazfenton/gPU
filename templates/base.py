@@ -74,10 +74,11 @@ class Template(ABC):
     
     def __init__(self):
         """Initialize template instance."""
-        self.inputs = self.inputs if hasattr(self, 'inputs') else []
-        self.outputs = self.outputs if hasattr(self, 'outputs') else []
-        self.routing = self.routing if hasattr(self, 'routing') else [RouteType.LOCAL]
-        self.pip_packages = self.pip_packages if hasattr(self, 'pip_packages') else []
+        # Copy class-level lists to prevent shared mutable state across instances
+        self.inputs = list(self.inputs) if hasattr(self, 'inputs') else []
+        self.outputs = list(self.outputs) if hasattr(self, 'outputs') else []
+        self.routing = list(self.routing) if hasattr(self, 'routing') else [RouteType.LOCAL]
+        self.pip_packages = list(self.pip_packages) if hasattr(self, 'pip_packages') else []
     
     def setup(self) -> None:
         """

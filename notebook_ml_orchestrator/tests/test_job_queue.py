@@ -6,7 +6,6 @@ and retry mechanisms.
 """
 
 import pytest
-import time
 from datetime import datetime, timedelta
 
 from notebook_ml_orchestrator.core.job_queue import JobQueueManager, RetryPolicy, JobStateManager

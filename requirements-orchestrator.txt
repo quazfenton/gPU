@@ -1,6 +1,6 @@
 # Core dependencies for Notebook ML Orchestrator
 # Database and persistence
-sqlite3  # Built into Python, but listed for clarity
+# sqlite3  # Built into Python, but listed for clarity
 
 # Testing framework
 pytest>=7.0.0
@@ -9,19 +9,19 @@ pytest-cov>=4.0.0
 hypothesis>=6.70.0
 
 # Async and concurrency
-asyncio  # Built into Python
-threading  # Built into Python
-concurrent.futures  # Built into Python
+# asyncio  # Built into Python
+# threading  # Built into Python
+# concurrent.futures  # Built into Python
 
 # Data handling and serialization
-dataclasses  # Built into Python 3.7+
-typing  # Built into Python 3.5+
-json  # Built into Python
-uuid  # Built into Python
-datetime  # Built into Python
+# dataclasses  # Built into Python 3.7+
+# typing  # Built into Python 3.5+
+# json  # Built into Python
+# uuid  # Built into Python
+# datetime  # Built into Python
 
 # Logging and monitoring
-logging  # Built into Python
+# logging  # Built into Python
 
 # Future dependencies (will be added in later tasks)
 # gradio>=3.40.0  # For GUI interface

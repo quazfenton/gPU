@@ -17,68 +17,71 @@ from .base import Template, RouteType, InputField, OutputField
 
 
 # Template registry
-_templates: Dict[str, Template] = {}
+_templates: Optional[Dict[str, Template]] = None
 
 
 def discover_templates(templates_dir: Optional[Path] = None) -> Dict[str, Template]:
     """
     Discover and instantiate all Template subclasses in the templates directory.
-    
+
     Args:
         templates_dir: Optional path to templates directory. Defaults to this directory.
-        
+
     Returns:
         Dict mapping template names to Template instances.
     """
     global _templates
-    
+
     if templates_dir is None:
         templates_dir = Path(__file__).parent
-    
-    _templates = {}
-    
+
+    discovered_templates = {}
+
     # Scan all Python files in templates directory
     for py_file in templates_dir.glob("*.py"):
         if py_file.name.startswith("_"):
             continue
         if py_file.name == "base.py":
             continue
-            
+
         module_name = py_file.stem
-        
+
         try:
             # Load module
             spec = importlib.util.spec_from_file_location(
-                f"templates.{module_name}", 
+                f"templates.{module_name}",
                 py_file
             )
             if spec is None or spec.loader is None:
                 continue
-                
+
             module = importlib.util.module_from_spec(spec)
             sys.modules[f"templates.{module_name}"] = module
             spec.loader.exec_module(module)
-            
+
             # Find Template subclasses
             for name, obj in inspect.getmembers(module, inspect.isclass):
-                if (issubclass(obj, Template) and 
+                if (issubclass(obj, Template) and
                     obj is not Template and
                     not inspect.isabstract(obj)):
                     try:
                         instance = obj()
-                        _templates[instance.name] = instance
+                        discovered_templates[instance.name] = instance
                     except Exception as e:
                         print(f"Warning: Could not instantiate {name}: {e}")
-                        
+
         except Exception as e:
             print(f"Warning: Could not load {py_file.name}: {e}")
-    
+
+    # Cache the discovered templates
+    _templates = discovered_templates
     return _templates
 
 
 def get_templates() -> Dict[str, Template]:
     """Get all discovered templates."""
-    if not _templates:
+    global _templates
+    if _templates is None:
         discover_templates()
     return _templates
 

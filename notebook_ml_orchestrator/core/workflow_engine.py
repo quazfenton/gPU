@@ -61,6 +61,7 @@ class DataPipeline:
     def __init__(self):
         self.data_transformers = {}
         self.type_validators = {}
+        self.step_outputs = {}  # Store outputs from each step
     
     def transform_data(self, data: Any, transformation: Dict) -> Any:
         """Transform data between workflow steps."""
@@ -68,14 +69,126 @@ class DataPipeline:
         pass
     
     def validate_data_types(self, data: Any, expected_schema: Dict) -> bool:
-        """Validate data types against expected schema."""
-        # Implementation will be added in task 6.2
-        pass
+        """
+        Validate data types against expected schema.
+        
+        This method validates that data types match between workflow steps,
+        ensuring type compatibility when passing outputs as inputs.
+        
+        Args:
+            data: Data to validate
+            expected_schema: Expected schema with type information
+            
+        Returns:
+            True if validation passes
+            
+        Raises:
+            TypeError: If data types don't match expected schema
+            
+        Requirements:
+            - 7.6: Validate data types between workflow steps
+        """
+        if not expected_schema:
+            return True
+        
+        for field_name, expected_type in expected_schema.items():
+            if field_name not in data:
+                continue  # Optional field
+            
+            value = data[field_name]
+            
+            # Basic type checking
+            if expected_type == "text" and not isinstance(value, str):
+                raise TypeError(
+                    f"Field '{field_name}' expects type 'text' (str), "
+                    f"but got {type(value).__name__}"
+                )
+            elif expected_type == "number" and not isinstance(value, (int, float)):
+                raise TypeError(
+                    f"Field '{field_name}' expects type 'number' (int/float), "
+                    f"but got {type(value).__name__}"
+                )
+            elif expected_type == "json" and not isinstance(value, (dict, list)):
+                raise TypeError(
+                    f"Field '{field_name}' expects type 'json' (dict/list), "
+                    f"but got {type(value).__name__}"
+                )
+            # For file types (audio, image, video, file), accept strings or bytes
+            elif expected_type in ["audio", "image", "video", "file"]:
+                if not isinstance(value, (str, bytes)):
+                    raise TypeError(
+                        f"Field '{field_name}' expects type '{expected_type}' (str/bytes), "
+                        f"but got {type(value).__name__}"
+                    )
+        
+        return True
     
-    def pass_data_between_steps(self, from_step: str, to_step: str, data: Any) -> Any:
-        """Handle data passing between workflow steps."""
-        # Implementation will be added in task 6.2
-        pass
+    def pass_data_between_steps(self, from_step: str, to_step: str, 
+                                from_outputs: Dict[str, Any],
+                                to_inputs_schema: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Handle data passing between workflow steps.
+        
+        This method implements Property 22: Workflow data passing.
+        For any workflow with two sequential steps where step A outputs a value 
+        with key K and step B expects an input with key K, this method passes 
+        the output value from step A as the input value to step B.
+        
+        Args:
+            from_step: Name of the source step
+            to_step: Name of the destination step
+            from_outputs: Outputs from the source step
+            to_inputs_schema: Input schema for the destination step (field_name -> type)
+            
+        Returns:
+            Dictionary of inputs for the destination step
+            
+        Raises:
+            TypeError: If data types don't match between steps
+            
+        Requirements:
+            - 7.6: Pass outputs from one template as inputs to the next
+        """
+        # Store outputs from the source step
+        self.step_outputs[from_step] = from_outputs
+        
+        # Build inputs for destination step by matching keys
+        to_inputs = {}
+        
+        for field_name, field_type in to_inputs_schema.items():
+            if field_name in from_outputs:
+                # Pass the value from source to destination
+                to_inputs[field_name] = from_outputs[field_name]
+        
+        # Validate data types
+        self.validate_data_types(to_inputs, to_inputs_schema)
+        
+        return to_inputs
+    
+    def get_step_output(self, step_name: str, output_key: str) -> Any:
+        """
+        Get a specific output from a step.
+        
+        Args:
+            step_name: Name of the step
+            output_key: Key of the output to retrieve
+            
+        Returns:
+            Output value
+            
+        Raises:
+            KeyError: If step or output key not found
+        """
+        if step_name not in self.step_outputs:
+            raise KeyError(f"Step '{step_name}' has no recorded outputs")
+        
+        if output_key not in self.step_outputs[step_name]:
+            raise KeyError(
+                f"Step '{step_name}' has no output '{output_key}'. "
+                f"Available outputs: {list(self.step_outputs[step_name].keys())}"
+            )
+        
+        return self.step_outputs[step_name][output_key]
 
 
 class WorkflowEngine(WorkflowEngineInterface, LoggerMixin):

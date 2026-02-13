@@ -166,6 +166,69 @@ def cleanup_command(args):
         return 1
 
 
+def backends_command(args):
+    """List backends with their capabilities."""
+    backend_router = MultiBackendRouter()
+    
+    try:
+        backends_info = backend_router.list_backends_with_capabilities()
+        
+        if not backends_info:
+            print("No backends registered")
+            return 0
+        
+        if args.json:
+            # Output as JSON
+            print(json.dumps(backends_info, indent=2, default=str))
+            return 0
+        
+        # Human-readable output
+        print("=== Registered Backends ===\n")
+        
+        for backend in backends_info:
+            print(f"Backend: {backend['name']} ({backend['id']})")
+            print(f"  Type: {backend['type']}")
+            print(f"  Health Status: {backend['health_status']}")
+            print(f"  Queue Length: {backend['queue_length']}")
+            
+            print(f"\n  Capabilities:")
+            caps = backend['capabilities']
+            print(f"    GPU Support: {caps['supports_gpu']}")
+            print(f"    Batch Support: {caps['supports_batch']}")
+            print(f"    Max Concurrent Jobs: {caps['max_concurrent_jobs']}")
+            print(f"    Max Job Duration: {caps['max_job_duration_minutes']} minutes")
+            print(f"    Cost per Hour: ${caps['cost_per_hour']:.2f}")
+            
+            if caps['free_tier_limits']:
+                print(f"    Free Tier Limits:")
+                for limit_key, limit_value in caps['free_tier_limits'].items():
+                    print(f"      {limit_key}: {limit_value}")
+            
+            print(f"    Supported Templates ({len(caps['supported_templates'])}):")
+            for template in caps['supported_templates']:
+                print(f"      - {template}")
+            
+            print(f"\n  Health Metrics:")
+            metrics = backend['health_metrics']
+            print(f"    Uptime: {metrics['uptime_percentage']:.1f}%")
+            print(f"    Total Checks: {metrics['total_checks']}")
+            print(f"    Failure Rate: {metrics['failure_rate']:.1f}%")
+            print(f"    Consecutive Failures: {metrics['consecutive_failures']}")
+            print(f"    Consecutive Job Failures: {metrics['consecutive_job_failures']}")
+            
+            if metrics.get('last_check'):
+                print(f"    Last Check: {metrics['last_check']}")
+            
+            print("\n" + "-" * 80 + "\n")
+        
+        return 0
+    except Exception as e:
+        print(f"Error listing backends: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
 def main():
     """Main CLI entry point."""
     setup_logging()
@@ -205,6 +268,11 @@ def main():
     cleanup_parser = subparsers.add_parser('cleanup', help='Clean up old jobs')
     cleanup_parser.add_argument('--days', type=int, default=30, help='Delete jobs older than N days')
     cleanup_parser.set_defaults(func=cleanup_command)
+    
+    # Backends command
+    backends_parser = subparsers.add_parser('backends', help='List backends with capabilities')
+    backends_parser.add_argument('--json', action='store_true', help='Output as JSON')
+    backends_parser.set_defaults(func=backends_command)
     
     # Parse arguments
     args = parser.parse_args()

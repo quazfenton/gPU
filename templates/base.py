@@ -54,12 +54,12 @@ class Template(ABC):
     description: str = "Base template class"
     version: str = "1.0.0"
     
-    # Input/output definitions
-    inputs: List[InputField] = field(default_factory=list)
-    outputs: List[OutputField] = field(default_factory=list)
+    # Input/output definitions (override in subclasses)
+    inputs: List[InputField] = []
+    outputs: List[OutputField] = []
     
-    # Supported routing backends
-    routing: List[RouteType] = field(default_factory=lambda: [RouteType.LOCAL])
+    # Supported routing backends (override in subclasses)
+    routing: List[RouteType] = []
     
     # Resource requirements
     gpu_required: bool = False
@@ -68,17 +68,45 @@ class Template(ABC):
     timeout_sec: int = 300
     
     # Dependencies
-    pip_packages: List[str] = field(default_factory=list)
+    pip_packages: List[str] = []
     
     _initialized: bool = False
     
     def __init__(self):
         """Initialize template instance."""
         # Copy class-level lists to prevent shared mutable state across instances
-        self.inputs = list(self.inputs) if hasattr(self, 'inputs') else []
-        self.outputs = list(self.outputs) if hasattr(self, 'outputs') else []
-        self.routing = list(self.routing) if hasattr(self, 'routing') else [RouteType.LOCAL]
-        self.pip_packages = list(self.pip_packages) if hasattr(self, 'pip_packages') else []
+        # Check if the attribute is a Field object (from dataclass) or a regular value
+        if hasattr(self, 'inputs'):
+            if isinstance(self.inputs, list):
+                self.inputs = list(self.inputs)
+            else:
+                self.inputs = []
+        else:
+            self.inputs = []
+            
+        if hasattr(self, 'outputs'):
+            if isinstance(self.outputs, list):
+                self.outputs = list(self.outputs)
+            else:
+                self.outputs = []
+        else:
+            self.outputs = []
+            
+        if hasattr(self, 'routing'):
+            if isinstance(self.routing, list):
+                self.routing = list(self.routing)
+            else:
+                self.routing = [RouteType.LOCAL]
+        else:
+            self.routing = [RouteType.LOCAL]
+            
+        if hasattr(self, 'pip_packages'):
+            if isinstance(self.pip_packages, list):
+                self.pip_packages = list(self.pip_packages)
+            else:
+                self.pip_packages = []
+        else:
+            self.pip_packages = []
     
     def setup(self) -> None:
         """
@@ -92,19 +120,129 @@ class Template(ABC):
         """
         Execute the template with given inputs.
         
+        This method should be overridden in subclasses. The base implementation
+        ensures setup() is called if not already initialized and validates outputs.
+        
         Args:
             **kwargs: Input arguments matching self.inputs
             
         Returns:
             Dict mapping output names to values
+            
+        Raises:
+            ValueError: If inputs or outputs don't match schema
+            Exception: If execution fails
         """
         raise NotImplementedError
     
+    def execute(self, **kwargs) -> Dict[str, Any]:
+        """
+        Execute the template with automatic setup and validation.
+        
+        This is the main entry point for template execution. It:
+        1. Validates inputs
+        2. Calls setup() if not initialized
+        3. Executes run()
+        4. Validates outputs
+        
+        Args:
+            **kwargs: Input arguments matching self.inputs
+            
+        Returns:
+            Dict mapping output names to values
+            
+        Raises:
+            ValueError: If validation fails
+            Exception: If execution fails with diagnostic information
+        """
+        # Validate inputs (may raise ValueError)
+        self.validate_inputs(**kwargs)
+        
+        # Ensure setup is called
+        if not self._initialized:
+            self.setup()
+        
+        try:
+            # Execute the template
+            outputs = self.run(**kwargs)
+        except Exception as e:
+            # Wrap execution errors with diagnostic information
+            raise RuntimeError(
+                f"Template '{self.name}' execution failed: {str(e)}"
+            ) from e
+        
+        # Validate outputs (may raise ValueError)
+        self.validate_outputs(outputs)
+        
+        return outputs
+    
     def validate_inputs(self, **kwargs) -> bool:
-        """Validate inputs match expected schema."""
+        """
+        Validate inputs match expected schema.
+        
+        Args:
+            **kwargs: Input arguments to validate
+            
+        Returns:
+            True if validation passes
+            
+        Raises:
+            ValueError: If validation fails with descriptive error message
+        """
+        # Check for missing required fields
         for inp in self.inputs:
             if inp.required and inp.name not in kwargs:
-                raise ValueError(f"Missing required input: {inp.name}")
+                raise ValueError(
+                    f"Template '{self.name}': Missing required input field '{inp.name}' "
+                    f"(type: {inp.type}, description: {inp.description})"
+                )
+        
+        # Check for type compatibility (basic validation)
+        for inp in self.inputs:
+            if inp.name in kwargs:
+                value = kwargs[inp.name]
+                # Basic type checking
+                if inp.type == "number" and not isinstance(value, (int, float)):
+                    raise ValueError(
+                        f"Template '{self.name}': Input field '{inp.name}' expects type 'number', "
+                        f"but got {type(value).__name__}"
+                    )
+                elif inp.type == "text" and not isinstance(value, str):
+                    raise ValueError(
+                        f"Template '{self.name}': Input field '{inp.name}' expects type 'text', "
+                        f"but got {type(value).__name__}"
+                    )
+                # For file types (audio, image, video, file), we accept strings (paths) or bytes
+                elif inp.type in ["audio", "image", "video", "file"]:
+                    if not isinstance(value, (str, bytes)):
+                        raise ValueError(
+                            f"Template '{self.name}': Input field '{inp.name}' expects type '{inp.type}' "
+                            f"(string path or bytes), but got {type(value).__name__}"
+                        )
+        
+        return True
+    
+    def validate_outputs(self, outputs: Dict[str, Any]) -> bool:
+        """
+        Validate outputs match expected schema.
+        
+        Args:
+            outputs: Output dictionary to validate
+            
+        Returns:
+            True if validation passes
+            
+        Raises:
+            ValueError: If validation fails with descriptive error message
+        """
+        # Check that all declared output fields are present
+        for out in self.outputs:
+            if out.name not in outputs:
+                raise ValueError(
+                    f"Template '{self.name}': Missing expected output field '{out.name}' "
+                    f"(type: {out.type}, description: {out.description})"
+                )
+        
         return True
     
     def get_modal_decorator_args(self) -> Dict[str, Any]:

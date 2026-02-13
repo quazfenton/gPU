@@ -127,6 +127,41 @@ class BackendResourceError(BackendError):
         })
 
 
+class BackendAuthenticationError(BackendError):
+    """Raised when backend authentication fails."""
+    
+    def __init__(self, message: str, backend_id: str = None):
+        super().__init__(message, "BACKEND_AUTHENTICATION_ERROR")
+        self.backend_id = backend_id
+        self.details['backend_id'] = backend_id
+
+
+class BackendRateLimitError(BackendError):
+    """Raised when backend rate limit is exceeded."""
+    
+    def __init__(self, message: str, backend_id: str = None, retry_after: int = None):
+        super().__init__(message, "BACKEND_RATE_LIMIT_ERROR")
+        self.backend_id = backend_id
+        self.retry_after = retry_after
+        self.details.update({
+            'backend_id': backend_id,
+            'retry_after': retry_after
+        })
+
+
+class BackendQuotaExceededError(BackendError):
+    """Raised when backend quota is exceeded."""
+    
+    def __init__(self, message: str, backend_id: str = None, quota_type: str = None):
+        super().__init__(message, "BACKEND_QUOTA_EXCEEDED_ERROR")
+        self.backend_id = backend_id
+        self.quota_type = quota_type
+        self.details.update({
+            'backend_id': backend_id,
+            'quota_type': quota_type
+        })
+
+
 class WorkflowError(OrchestratorError):
     """Base class for workflow-related errors."""
     pass

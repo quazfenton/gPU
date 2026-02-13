@@ -197,27 +197,52 @@ class Template(ABC):
                     f"(type: {inp.type}, description: {inp.description})"
                 )
         
-        # Check for type compatibility (basic validation)
+        # Check for type compatibility and validate all provided inputs
         for inp in self.inputs:
             if inp.name in kwargs:
                 value = kwargs[inp.name]
-                # Basic type checking
-                if inp.type == "number" and not isinstance(value, (int, float)):
-                    raise ValueError(
-                        f"Template '{self.name}': Input field '{inp.name}' expects type 'number', "
-                        f"but got {type(value).__name__}"
-                    )
-                elif inp.type == "text" and not isinstance(value, str):
-                    raise ValueError(
-                        f"Template '{self.name}': Input field '{inp.name}' expects type 'text', "
-                        f"but got {type(value).__name__}"
-                    )
+                
+                # Skip validation for None values if field is not required
+                if value is None and not inp.required:
+                    continue
+                
+                # Type checking with descriptive error messages
+                if inp.type == "number":
+                    if not isinstance(value, (int, float)):
+                        raise ValueError(
+                            f"Template '{self.name}': Input field '{inp.name}' expects type 'number', "
+                            f"but got {type(value).__name__}. "
+                            f"Description: {inp.description}"
+                        )
+                elif inp.type == "text":
+                    if not isinstance(value, str):
+                        raise ValueError(
+                            f"Template '{self.name}': Input field '{inp.name}' expects type 'text', "
+                            f"but got {type(value).__name__}. "
+                            f"Description: {inp.description}"
+                        )
+                elif inp.type == "json":
+                    if not isinstance(value, (dict, list)):
+                        raise ValueError(
+                            f"Template '{self.name}': Input field '{inp.name}' expects type 'json' "
+                            f"(dict or list), but got {type(value).__name__}. "
+                            f"Description: {inp.description}"
+                        )
                 # For file types (audio, image, video, file), we accept strings (paths) or bytes
                 elif inp.type in ["audio", "image", "video", "file"]:
                     if not isinstance(value, (str, bytes)):
                         raise ValueError(
                             f"Template '{self.name}': Input field '{inp.name}' expects type '{inp.type}' "
-                            f"(string path or bytes), but got {type(value).__name__}"
+                            f"(string path or bytes), but got {type(value).__name__}. "
+                            f"Description: {inp.description}"
+                        )
+                
+                # Validate against options if specified
+                if inp.options is not None and len(inp.options) > 0:
+                    if value not in inp.options:
+                        raise ValueError(
+                            f"Template '{self.name}': Input field '{inp.name}' has invalid value '{value}'. "
+                            f"Must be one of: {inp.options}"
                         )
         
         return True
@@ -235,13 +260,58 @@ class Template(ABC):
         Raises:
             ValueError: If validation fails with descriptive error message
         """
+        if not isinstance(outputs, dict):
+            raise ValueError(
+                f"Template '{self.name}': Output must be a dictionary, "
+                f"but got {type(outputs).__name__}"
+            )
+        
         # Check that all declared output fields are present
+        missing_fields = []
         for out in self.outputs:
             if out.name not in outputs:
-                raise ValueError(
-                    f"Template '{self.name}': Missing expected output field '{out.name}' "
-                    f"(type: {out.type}, description: {out.description})"
-                )
+                missing_fields.append(f"'{out.name}' (type: {out.type}, description: {out.description})")
+        
+        if missing_fields:
+            raise ValueError(
+                f"Template '{self.name}': Missing expected output field(s): {', '.join(missing_fields)}"
+            )
+        
+        # Validate output types
+        for out in self.outputs:
+            if out.name in outputs:
+                value = outputs[out.name]
+                
+                # Skip validation for None values (allow optional outputs)
+                if value is None:
+                    continue
+                
+                # Type checking for outputs
+                if out.type == "number":
+                    if not isinstance(value, (int, float)):
+                        raise ValueError(
+                            f"Template '{self.name}': Output field '{out.name}' expects type 'number', "
+                            f"but got {type(value).__name__}"
+                        )
+                elif out.type == "text":
+                    if not isinstance(value, str):
+                        raise ValueError(
+                            f"Template '{self.name}': Output field '{out.name}' expects type 'text', "
+                            f"but got {type(value).__name__}"
+                        )
+                elif out.type == "json":
+                    if not isinstance(value, (dict, list)):
+                        raise ValueError(
+                            f"Template '{self.name}': Output field '{out.name}' expects type 'json' "
+                            f"(dict or list), but got {type(value).__name__}"
+                        )
+                # For file types (audio, image, video, file), we accept strings (paths) or bytes
+                elif out.type in ["audio", "image", "video", "file"]:
+                    if not isinstance(value, (str, bytes)):
+                        raise ValueError(
+                            f"Template '{self.name}': Output field '{out.name}' expects type '{out.type}' "
+                            f"(string path or bytes), but got {type(value).__name__}"
+                        )
         
         return True
     

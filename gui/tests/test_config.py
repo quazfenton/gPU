@@ -26,6 +26,9 @@ class TestGUIConfig:
         assert config.page_size == 50
         assert config.auto_refresh_interval == 5
         assert config.session_timeout == 3600
+        assert config.enable_rate_limiting is True
+        assert config.rate_limit_per_minute == 60
+        assert config.rate_limit_per_hour == 1000
     
     def test_from_env_with_defaults(self):
         """Test loading from environment with no env vars set uses defaults."""
@@ -48,6 +51,9 @@ class TestGUIConfig:
             assert config.page_size == 50
             assert config.auto_refresh_interval == 5
             assert config.session_timeout == 3600
+            assert config.enable_rate_limiting is True
+            assert config.rate_limit_per_minute == 60
+            assert config.rate_limit_per_hour == 1000
         finally:
             # Restore original env vars
             for var, value in original_values.items():
@@ -175,3 +181,33 @@ class TestGUIConfig:
         assert config.page_size == 75
         assert config.auto_refresh_interval == 15
         assert config.session_timeout == 1800
+    
+    def test_rate_limiting_config_from_env(self):
+        """Test rate limiting configuration from environment variables."""
+        os.environ["GUI_ENABLE_RATE_LIMITING"] = "false"
+        os.environ["GUI_RATE_LIMIT_PER_MINUTE"] = "30"
+        os.environ["GUI_RATE_LIMIT_PER_HOUR"] = "500"
+        
+        try:
+            config = GUIConfig.from_env()
+            
+            assert config.enable_rate_limiting is False
+            assert config.rate_limit_per_minute == 30
+            assert config.rate_limit_per_hour == 500
+        finally:
+            # Clean up env vars
+            for var in ["GUI_ENABLE_RATE_LIMITING", "GUI_RATE_LIMIT_PER_MINUTE", 
+                       "GUI_RATE_LIMIT_PER_HOUR"]:
+                os.environ.pop(var, None)
+    
+    def test_rate_limiting_config_direct(self):
+        """Test rate limiting configuration via direct instantiation."""
+        config = GUIConfig(
+            enable_rate_limiting=False,
+            rate_limit_per_minute=10,
+            rate_limit_per_hour=100
+        )
+        
+        assert config.enable_rate_limiting is False
+        assert config.rate_limit_per_minute == 10
+        assert config.rate_limit_per_hour == 100

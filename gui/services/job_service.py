@@ -11,6 +11,14 @@ from datetime import datetime
 from notebook_ml_orchestrator.core.interfaces import Job, JobQueueInterface, BackendRouterInterface
 from notebook_ml_orchestrator.core.models import JobStatus, JobResult
 from notebook_ml_orchestrator.core.logging_config import LoggerMixin
+from gui.error_handling import (
+    ErrorResponse,
+    format_validation_error,
+    format_backend_error,
+    format_system_error,
+    format_generic_error,
+    sanitize_error_message
+)
 
 
 class JobService(LoggerMixin):
@@ -34,7 +42,8 @@ class JobService(LoggerMixin):
         inputs: Dict[str, Any],
         backend: Optional[str] = None,
         user_id: str = "default_user",
-        priority: int = 0
+        priority: int = 0,
+        routing_strategy: str = "cost-optimized"
     ) -> str:
         """
         Submit a job and return job ID.
@@ -45,39 +54,67 @@ class JobService(LoggerMixin):
             backend: Optional backend ID for explicit backend selection
             user_id: User ID submitting the job
             priority: Job priority (higher = more important)
+            routing_strategy: Routing strategy for automatic backend selection
+                            ("cost-optimized", "round-robin", "least-loaded")
             
         Returns:
             Job ID
             
         Raises:
             ValueError: If template_name or inputs are invalid
+            Exception: If job submission fails
         """
-        if not template_name:
-            raise ValueError("Template name is required")
-        
-        if inputs is None:
-            raise ValueError("Inputs dictionary is required")
-        
-        # Create job instance
-        job = Job(
-            user_id=user_id,
-            template_name=template_name,
-            inputs=inputs,
-            priority=priority,
-            backend_id=backend,  # Set backend_id if explicitly specified
-            status=JobStatus.QUEUED,
-            created_at=datetime.now()
-        )
-        
-        # Submit to job queue
-        job_id = self.job_queue.submit_job(job)
-        
-        self.logger.info(
-            f"Job submitted: job_id={job_id}, template={template_name}, "
-            f"backend={backend or 'auto'}, user={user_id}"
-        )
-        
-        return job_id
+        try:
+            if not template_name:
+                error = format_validation_error(
+                    "template_name",
+                    "Template name is required"
+                )
+                self.logger.error(f"Validation error: {error.message}")
+                raise ValueError(error.message)
+            
+            if inputs is None:
+                error = format_validation_error(
+                    "inputs",
+                    "Inputs dictionary is required"
+                )
+                self.logger.error(f"Validation error: {error.message}")
+                raise ValueError(error.message)
+            
+            # Create job instance
+            job = Job(
+                user_id=user_id,
+                template_name=template_name,
+                inputs=inputs,
+                priority=priority,
+                backend_id=backend,  # Set backend_id if explicitly specified
+                status=JobStatus.QUEUED,
+                created_at=datetime.now(),
+                metadata={"routing_strategy": routing_strategy}  # Store routing strategy in metadata
+            )
+            
+            # Submit to job queue
+            job_id = self.job_queue.submit_job(job)
+            
+            self.logger.info(
+                f"Job submitted: job_id={job_id}, template={template_name}, "
+                f"backend={backend or 'auto'}, routing_strategy={routing_strategy}, user={user_id}"
+            )
+            
+            return job_id
+            
+        except ValueError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            # Handle unexpected errors
+            error = format_system_error(
+                "job_queue",
+                sanitize_error_message(str(e)),
+                is_recoverable=True
+            )
+            self.logger.error(f"Job submission failed: {error.message}", exc_info=True)
+            raise Exception(error.message) from e
     
     def get_job_status(self, job_id: str) -> Dict[str, Any]:
         """
@@ -103,37 +140,57 @@ class JobService(LoggerMixin):
             
         Raises:
             ValueError: If job not found
+            Exception: If retrieval fails
         """
-        job = self.job_queue.get_job(job_id)
-        
-        if not job:
-            raise ValueError(f"Job {job_id} not found")
-        
-        # Calculate duration if job has completed
-        duration = None
-        if job.started_at and job.completed_at:
-            duration = (job.completed_at - job.started_at).total_seconds()
-        
-        return {
-            'job_id': job.id,
-            'template': job.template_name,
-            'status': job.status.value,
-            'backend': job.backend_id,
-            'created_at': job.created_at.isoformat() if job.created_at else None,
-            'started_at': job.started_at.isoformat() if job.started_at else None,
-            'completed_at': job.completed_at.isoformat() if job.completed_at else None,
-            'inputs': job.inputs,
-            'result': self._serialize_result(job.result) if job.result else None,
-            'error': job.error,
-            'retry_count': job.retry_count,
-            'duration': duration,
-            'priority': job.priority,
-            'metadata': job.metadata
-        }
+        try:
+            job = self.job_queue.get_job(job_id)
+            
+            if not job:
+                error = format_validation_error(
+                    "job_id",
+                    f"Job {job_id} not found"
+                )
+                self.logger.error(f"Job not found: {job_id}")
+                raise ValueError(error.message)
+            
+            # Calculate duration if job has completed
+            duration = None
+            if job.started_at and job.completed_at:
+                duration = (job.completed_at - job.started_at).total_seconds()
+            
+            return {
+                'job_id': job.id,
+                'template': job.template_name,
+                'status': job.status.value,
+                'backend': job.backend_id,
+                'created_at': job.created_at.isoformat() if job.created_at else None,
+                'started_at': job.started_at.isoformat() if job.started_at else None,
+                'completed_at': job.completed_at.isoformat() if job.completed_at else None,
+                'inputs': job.inputs,
+                'result': self._serialize_result(job.result) if job.result else None,
+                'error': sanitize_error_message(job.error) if job.error else None,
+                'retry_count': job.retry_count,
+                'duration': duration,
+                'priority': job.priority,
+                'metadata': job.metadata
+            }
+            
+        except ValueError:
+            # Re-raise validation errors
+            raise
+        except Exception as e:
+            # Handle unexpected errors
+            error = format_system_error(
+                "job_queue",
+                sanitize_error_message(str(e)),
+                is_recoverable=True
+            )
+            self.logger.error(f"Failed to get job status: {error.message}", exc_info=True)
+            raise Exception(error.message) from e
     
-    def get_jobs(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    def get_jobs(self, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Retrieve filtered list of jobs.
+        Retrieve filtered list of jobs with pagination support.
         
         Args:
             filters: Optional dictionary with filter criteria:
@@ -143,21 +200,40 @@ class JobService(LoggerMixin):
                 - user_id: Filter by user ID
                 - date_from: Filter jobs created after this date (ISO format)
                 - date_to: Filter jobs created before this date (ISO format)
-                - limit: Maximum number of jobs to return (default: 100)
+                - page: Page number (1-indexed, default: 1)
+                - page_size: Number of jobs per page (default: 50)
                 - sort_by: Sort field ("created_at", "completed_at", "duration")
                 - sort_order: Sort order ("asc" or "desc", default: "desc")
                 
         Returns:
-            List of job dictionaries with summary information
+            Dictionary containing:
+                - jobs: List of job dictionaries with summary information
+                - total_count: Total number of jobs matching filters
+                - page: Current page number
+                - page_size: Jobs per page
+                - total_pages: Total number of pages
+                - has_next: Whether there is a next page
+                - has_prev: Whether there is a previous page
         """
         filters = filters or {}
         
+        # Get pagination parameters
+        page = filters.get('page', 1)
+        page_size = filters.get('page_size', 50)
+        
+        # Validate pagination parameters
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 50
+        if page_size > 1000:
+            page_size = 1000  # Cap at 1000 to prevent excessive data transfer
+        
         # Get user_id filter or default to all users
         user_id = filters.get('user_id', 'default_user')
-        limit = filters.get('limit', 100)
         
-        # Get jobs from queue
-        jobs = self.job_queue.get_job_history(user_id, limit=limit * 2)  # Get more to allow filtering
+        # Get jobs from queue (fetch more than needed to allow filtering)
+        jobs = self.job_queue.get_job_history(user_id, limit=10000)  # Get all jobs for filtering
         
         # Apply filters
         filtered_jobs = []
@@ -215,8 +291,31 @@ class JobService(LoggerMixin):
         elif sort_by == 'duration':
             filtered_jobs.sort(key=lambda x: x['duration'] or 0, reverse=reverse)
         
-        # Apply limit
-        return filtered_jobs[:limit]
+        # Calculate pagination metadata
+        total_count = len(filtered_jobs)
+        total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+        
+        # Ensure page is within valid range
+        if page > total_pages:
+            page = total_pages
+        
+        # Calculate slice indices
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        
+        # Get paginated slice
+        paginated_jobs = filtered_jobs[start_idx:end_idx]
+        
+        # Return pagination result
+        return {
+            'jobs': paginated_jobs,
+            'total_count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': total_pages,
+            'has_next': page < total_pages,
+            'has_prev': page > 1
+        }
     
     def get_job_results(self, job_id: str) -> Dict[str, Any]:
         """
@@ -257,15 +356,22 @@ class JobService(LoggerMixin):
         
         return self._serialize_result(job.result)
     
-    def get_job_logs(self, job_id: str) -> str:
+    def get_job_logs(self, job_id: str, start_line: int = 0, max_lines: int = 1000) -> Dict[str, Any]:
         """
-        Retrieve job execution logs.
+        Retrieve job execution logs with pagination support.
         
         Args:
             job_id: Job ID to retrieve logs for
+            start_line: Starting line number (0-indexed)
+            max_lines: Maximum number of lines to return
             
         Returns:
-            Job execution logs as string
+            Dictionary containing:
+                - logs: Log content as string
+                - start_line: Starting line number
+                - end_line: Ending line number
+                - total_lines: Total number of lines available
+                - has_more: Whether more lines are available
             
         Raises:
             ValueError: If job not found
@@ -301,7 +407,29 @@ class JobService(LoggerMixin):
             
             logs = "\n".join(log_lines)
         
-        return logs
+        # Split logs into lines for pagination
+        log_lines_list = logs.split('\n')
+        total_lines = len(log_lines_list)
+        
+        # Validate start_line
+        if start_line < 0:
+            start_line = 0
+        if start_line >= total_lines:
+            start_line = max(0, total_lines - max_lines)
+        
+        # Calculate end line
+        end_line = min(start_line + max_lines, total_lines)
+        
+        # Extract the requested slice
+        paginated_logs = '\n'.join(log_lines_list[start_line:end_line])
+        
+        return {
+            'logs': paginated_logs,
+            'start_line': start_line,
+            'end_line': end_line,
+            'total_lines': total_lines,
+            'has_more': end_line < total_lines
+        }
     
     def _serialize_result(self, result: JobResult) -> Dict[str, Any]:
         """

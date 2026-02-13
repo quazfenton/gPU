@@ -17,6 +17,7 @@ from .core.batch_processor import BatchProcessor
 from .core.interfaces import Job
 from .core.models import JobStatus
 from .core.logging_config import configure_default_logging
+from .core.template_registry import TemplateRegistry
 from .config import get_config
 
 
@@ -229,6 +230,189 @@ def backends_command(args):
         return 1
 
 
+def list_templates_command(args):
+    """List all available templates."""
+    try:
+        registry = TemplateRegistry(templates_dir=args.templates_dir)
+        template_count = registry.discover_templates()
+        
+        if template_count == 0:
+            print("No templates found")
+            return 0
+        
+        # Get templates, optionally filtered by category
+        templates = registry.list_templates(category=args.category)
+        
+        if not templates:
+            if args.category:
+                print(f"No templates found in category: {args.category}")
+            else:
+                print("No templates found")
+            return 0
+        
+        if args.json:
+            # Output as JSON
+            templates_data = []
+            for template in templates:
+                metadata = registry.get_template_metadata(template.name)
+                templates_data.append(metadata)
+            print(json.dumps(templates_data, indent=2, default=str))
+            return 0
+        
+        # Human-readable output
+        if args.category:
+            print(f"=== Templates in category: {args.category} ===\n")
+        else:
+            print("=== All Templates ===\n")
+        
+        # Group by category
+        by_category = {}
+        for template in templates:
+            category = template.category
+            if category not in by_category:
+                by_category[category] = []
+            by_category[category].append(template)
+        
+        for category, category_templates in sorted(by_category.items()):
+            print(f"{category} ({len(category_templates)} templates):")
+            for template in sorted(category_templates, key=lambda t: t.name):
+                print(f"  - {template.name}")
+                print(f"    {template.description}")
+                print(f"    Version: {template.version}")
+                if template.gpu_required:
+                    print(f"    GPU: {template.gpu_type} ({template.memory_mb}MB)")
+                else:
+                    print(f"    CPU only ({template.memory_mb}MB)")
+                print()
+        
+        # Show statistics
+        stats = registry.get_registry_stats()
+        print(f"\nTotal: {stats['total_templates']} templates across {stats['categories']} categories")
+        if stats['failed_templates']:
+            print(f"Failed to load: {stats['failed_templates']} templates")
+        
+        return 0
+    except Exception as e:
+        print(f"Error listing templates: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def template_info_command(args):
+    """Show detailed information about a specific template."""
+    try:
+        registry = TemplateRegistry(templates_dir=args.templates_dir)
+        registry.discover_templates()
+        
+        metadata = registry.get_template_metadata(args.template_name)
+        
+        if not metadata:
+            print(f"Template not found: {args.template_name}")
+            return 1
+        
+        if args.json:
+            # Output as JSON
+            print(json.dumps(metadata, indent=2, default=str))
+            return 0
+        
+        # Human-readable output
+        print(f"=== Template: {metadata['name']} ===\n")
+        print(f"Category: {metadata['category']}")
+        print(f"Version: {metadata['version']}")
+        print(f"Description: {metadata['description']}")
+        print()
+        
+        print("Inputs:")
+        for input_field in metadata['inputs']:
+            required = "required" if input_field['required'] else "optional"
+            print(f"  - {input_field['name']} ({input_field['type']}, {required})")
+            print(f"    {input_field['description']}")
+            if 'default' in input_field and input_field['default'] is not None:
+                print(f"    Default: {input_field['default']}")
+            if 'options' in input_field and input_field['options']:
+                print(f"    Options: {', '.join(str(o) for o in input_field['options'])}")
+            print()
+        
+        print("Outputs:")
+        for output_field in metadata['outputs']:
+            print(f"  - {output_field['name']} ({output_field['type']})")
+            print(f"    {output_field['description']}")
+            print()
+        
+        print("Resource Requirements:")
+        print(f"  GPU Required: {metadata['gpu_required']}")
+        if metadata['gpu_required']:
+            print(f"  GPU Type: {metadata['gpu_type']}")
+        print(f"  Memory: {metadata['memory_mb']}MB")
+        print(f"  Timeout: {metadata['timeout_sec']}s")
+        print()
+        
+        print(f"Supported Backends: {', '.join(metadata['routing'])}")
+        print()
+        
+        if metadata['pip_packages']:
+            print(f"Dependencies: {', '.join(metadata['pip_packages'])}")
+            print()
+        
+        return 0
+    except Exception as e:
+        print(f"Error getting template info: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def test_template_command(args):
+    """Quick test of a template with sample inputs."""
+    try:
+        registry = TemplateRegistry(templates_dir=args.templates_dir)
+        registry.discover_templates()
+        
+        template = registry.get_template(args.template_name)
+        
+        if not template:
+            print(f"Template not found: {args.template_name}")
+            return 1
+        
+        print(f"Testing template: {template.name}")
+        print(f"Category: {template.category}")
+        print()
+        
+        # Parse inputs if provided
+        inputs = {}
+        if args.inputs:
+            try:
+                inputs = json.loads(args.inputs)
+            except json.JSONDecodeError as e:
+                print(f"Error parsing inputs JSON: {e}")
+                return 1
+        
+        # Validate inputs
+        print("Validating inputs...")
+        try:
+            template.validate_inputs(**inputs)
+            print("✓ Input validation passed")
+        except Exception as e:
+            print(f"✗ Input validation failed: {e}")
+            return 1
+        
+        # Show what would be executed
+        print()
+        print("Template is valid and ready for execution")
+        print(f"Inputs: {json.dumps(inputs, indent=2)}")
+        print()
+        print("Note: Actual execution requires submitting to job queue")
+        print(f"Use: orchestrator-cli create --template {template.name} --inputs '{json.dumps(inputs)}'")
+        
+        return 0
+    except Exception as e:
+        print(f"Error testing template: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
 def main():
     """Main CLI entry point."""
     setup_logging()
@@ -273,6 +457,27 @@ def main():
     backends_parser = subparsers.add_parser('backends', help='List backends with capabilities')
     backends_parser.add_argument('--json', action='store_true', help='Output as JSON')
     backends_parser.set_defaults(func=backends_command)
+    
+    # List templates command
+    list_templates_parser = subparsers.add_parser('list-templates', help='List all available templates')
+    list_templates_parser.add_argument('--category', help='Filter by category')
+    list_templates_parser.add_argument('--json', action='store_true', help='Output as JSON')
+    list_templates_parser.add_argument('--templates-dir', default='templates', help='Templates directory path')
+    list_templates_parser.set_defaults(func=list_templates_command)
+    
+    # Template info command
+    template_info_parser = subparsers.add_parser('template-info', help='Show detailed template information')
+    template_info_parser.add_argument('template_name', help='Template name')
+    template_info_parser.add_argument('--json', action='store_true', help='Output as JSON')
+    template_info_parser.add_argument('--templates-dir', default='templates', help='Templates directory path')
+    template_info_parser.set_defaults(func=template_info_command)
+    
+    # Test template command
+    test_template_parser = subparsers.add_parser('test-template', help='Quick test of a template')
+    test_template_parser.add_argument('template_name', help='Template name')
+    test_template_parser.add_argument('--inputs', help='Template inputs as JSON string')
+    test_template_parser.add_argument('--templates-dir', default='templates', help='Templates directory path')
+    test_template_parser.set_defaults(func=test_template_command)
     
     # Parse arguments
     args = parser.parse_args()

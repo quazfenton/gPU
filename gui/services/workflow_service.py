@@ -13,6 +13,13 @@ from notebook_ml_orchestrator.core.interfaces import WorkflowEngineInterface
 from notebook_ml_orchestrator.core.models import WorkflowDefinition, WorkflowStatus
 from notebook_ml_orchestrator.core.logging_config import LoggerMixin
 from notebook_ml_orchestrator.core.exceptions import WorkflowValidationError, WorkflowExecutionError
+from gui.error_handling import (
+    ErrorResponse,
+    format_workflow_error,
+    format_validation_error,
+    format_system_error,
+    sanitize_error_message
+)
 
 
 class WorkflowService(LoggerMixin):
@@ -174,11 +181,17 @@ class WorkflowService(LoggerMixin):
         # First validate the workflow
         is_valid, error_message = self.validate_workflow(workflow_json)
         if not is_valid:
-            raise ValueError(f"Invalid workflow: {error_message}")
+            error = format_workflow_error(
+                "Unknown Workflow",
+                error_message
+            )
+            self.logger.error(f"Workflow validation failed: {error_message}")
+            raise ValueError(error.message)
         
         try:
             # Parse workflow JSON
             workflow_data = json.loads(workflow_json)
+            workflow_name = workflow_data.get('name', 'Unnamed Workflow')
             
             # Create WorkflowDefinition
             definition = WorkflowDefinition(
@@ -186,7 +199,7 @@ class WorkflowService(LoggerMixin):
                 connections=workflow_data.get('connections', []),
                 conditions=workflow_data.get('conditions', []),
                 metadata={
-                    'name': workflow_data.get('name', 'Unnamed Workflow'),
+                    'name': workflow_name,
                     'description': workflow_data.get('description', ''),
                     **workflow_data.get('metadata', {})
                 }
@@ -201,18 +214,32 @@ class WorkflowService(LoggerMixin):
             
             self.logger.info(
                 f"Workflow executed: workflow_id={workflow.id}, "
-                f"execution_id={execution.id}, name={workflow_data.get('name')}"
+                f"execution_id={execution.id}, name={workflow_name}"
             )
             
             return execution.id
             
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON format: {str(e)}")
+            error = format_validation_error(
+                "workflow_json",
+                f"Invalid JSON format: {str(e)}"
+            )
+            self.logger.error(f"JSON decode error: {str(e)}")
+            raise ValueError(error.message) from e
         except WorkflowValidationError as e:
-            raise WorkflowValidationError(f"Workflow validation failed: {str(e)}")
+            error = format_workflow_error(
+                workflow_data.get('name', 'Unknown Workflow'),
+                sanitize_error_message(str(e))
+            )
+            self.logger.error(f"Workflow validation error: {str(e)}")
+            raise WorkflowValidationError(error.message) from e
         except Exception as e:
-            self.logger.error(f"Workflow execution failed: {str(e)}")
-            raise WorkflowExecutionError(f"Workflow execution failed: {str(e)}")
+            error = format_workflow_error(
+                workflow_data.get('name', 'Unknown Workflow') if 'workflow_data' in locals() else 'Unknown Workflow',
+                sanitize_error_message(str(e))
+            )
+            self.logger.error(f"Workflow execution failed: {str(e)}", exc_info=True)
+            raise WorkflowExecutionError(error.message) from e
     
     def get_workflow_status(self, workflow_id: str) -> Dict[str, Any]:
         """

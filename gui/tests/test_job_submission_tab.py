@@ -77,6 +77,17 @@ class TestJobSubmissionTab:
         assert choices[0] == 'test_template'
         mock_template_service.get_templates.assert_called_once()
     
+    def test_get_backend_choices(self, job_submission_tab):
+        """Test retrieving backend choices for dropdown."""
+        choices = job_submission_tab._get_backend_choices()
+        
+        # Should always include "auto" as first option
+        assert len(choices) > 0
+        assert choices[0] == 'auto'
+        
+        # Should include common backend types
+        assert any(backend in choices for backend in ['colab', 'kaggle', 'huggingface', 'modal'])
+    
     def test_generate_template_docs(self, job_submission_tab, mock_template_service):
         """Test generating template documentation."""
         metadata = mock_template_service.get_template_metadata('test_template')
@@ -111,25 +122,65 @@ class TestJobSubmissionTab:
         """Test successful job submission."""
         template_name = 'test_template'
         backend = 'colab'
+        routing_strategy = 'cost-optimized'
         inputs = {'input1': 'test value'}
         
-        job_id_output, status_message = job_submission_tab.on_submit_job(
-            template_name, backend, inputs
+        job_id_output, status_message, loading_indicator = job_submission_tab.on_submit_job(
+            template_name, backend, routing_strategy, inputs
         )
         
         # Verify job service was called
         mock_job_service.submit_job.assert_called_once_with(
             template_name='test_template',
             inputs={'input1': 'test value'},
-            backend='colab'
+            backend='colab',
+            routing_strategy='cost-optimized'
         )
     
     def test_on_submit_job_no_template(self, job_submission_tab):
         """Test job submission without template selection."""
-        job_id_output, status_message = job_submission_tab.on_submit_job(
-            None, 'auto', {}
+        job_id_output, status_message, loading_indicator = job_submission_tab.on_submit_job(
+            None, 'auto', 'cost-optimized', {}
         )
         
         # Should return error message
         assert status_message.value is not None
         assert 'Error' in status_message.value or 'select a template' in status_message.value.lower()
+    
+    def test_on_submit_job_with_auto_backend(self, job_submission_tab, mock_job_service):
+        """Test job submission with automatic backend routing."""
+        template_name = 'test_template'
+        backend = 'auto'
+        routing_strategy = 'cost-optimized'
+        inputs = {'input1': 'test value'}
+        
+        job_id_output, status_message, loading_indicator = job_submission_tab.on_submit_job(
+            template_name, backend, routing_strategy, inputs
+        )
+        
+        # Verify job service was called with backend=None for automatic routing
+        mock_job_service.submit_job.assert_called_once_with(
+            template_name='test_template',
+            inputs={'input1': 'test value'},
+            backend=None,  # "auto" should be converted to None
+            routing_strategy='cost-optimized'
+        )
+    
+    def test_on_submit_job_with_specific_backend(self, job_submission_tab, mock_job_service):
+        """Test job submission with specific backend selection."""
+        template_name = 'test_template'
+        backend = 'kaggle'
+        routing_strategy = 'round-robin'
+        inputs = {'input1': 'test value'}
+        
+        job_id_output, status_message, loading_indicator = job_submission_tab.on_submit_job(
+            template_name, backend, routing_strategy, inputs
+        )
+        
+        # Verify job service was called with the specific backend
+        mock_job_service.submit_job.assert_called_once_with(
+            template_name='test_template',
+            inputs={'input1': 'test value'},
+            backend='kaggle',
+            routing_strategy='round-robin'
+        )

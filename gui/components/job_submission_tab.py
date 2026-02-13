@@ -10,6 +10,13 @@ import gradio as gr
 from gui.services.job_service import JobService
 from gui.services.template_service import TemplateService
 from gui.validation import validate_inputs, format_validation_errors
+from gui.error_handling import (
+    format_validation_error,
+    format_generic_error,
+    create_success_message,
+    create_loading_message,
+    sanitize_error_message
+)
 from notebook_ml_orchestrator.core.logging_config import LoggerMixin
 from templates.base import Template, InputField
 
@@ -54,10 +61,19 @@ class JobSubmissionTab(LoggerMixin):
                     # Backend selection (optional)
                     backend_dropdown = gr.Dropdown(
                         label="Backend (Optional)",
-                        choices=["auto", "colab", "kaggle", "huggingface", "modal"],
+                        choices=self._get_backend_choices(),
                         value="auto",
                         interactive=True,
                         info="Select backend or use automatic routing"
+                    )
+                    
+                    # Routing strategy selection
+                    routing_strategy_dropdown = gr.Dropdown(
+                        label="Routing Strategy",
+                        choices=["cost-optimized", "round-robin", "least-loaded"],
+                        value="cost-optimized",
+                        interactive=True,
+                        info="Strategy for automatic backend selection"
                     )
                     
                     # Template documentation display
@@ -98,6 +114,12 @@ class JobSubmissionTab(LoggerMixin):
                         value="",
                         visible=False
                     )
+                    
+                    # Loading indicator
+                    loading_indicator = gr.HTML(
+                        value="",
+                        visible=False
+                    )
             
             # Event handlers
             template_dropdown.change(
@@ -117,11 +139,13 @@ class JobSubmissionTab(LoggerMixin):
                 inputs=[
                     template_dropdown,
                     backend_dropdown,
+                    routing_strategy_dropdown,
                     dynamic_inputs
                 ],
                 outputs=[
                     job_id_output,
-                    status_message
+                    status_message,
+                    loading_indicator
                 ]
             )
         
@@ -140,6 +164,32 @@ class JobSubmissionTab(LoggerMixin):
         except Exception as e:
             self.logger.error(f"Failed to retrieve templates: {e}")
             return []
+    
+    def _get_backend_choices(self) -> List[str]:
+        """
+        Get list of available backend IDs for dropdown.
+        
+        Returns:
+            List of backend IDs with "auto" as the first option
+        """
+        try:
+            # Always include "auto" as the first option for automatic routing
+            choices = ["auto"]
+            
+            # Get registered backends from job service's backend router
+            if hasattr(self.job_service, 'backend_router'):
+                backends = self.job_service.backend_router.list_backends()
+                backend_ids = [backend.id for backend in backends]
+                choices.extend(sorted(backend_ids))
+            else:
+                # Fallback to common backend types if router not available
+                choices.extend(["colab", "kaggle", "huggingface", "modal"])
+            
+            return choices
+        except Exception as e:
+            self.logger.error(f"Failed to retrieve backends: {e}")
+            # Return default backend options
+            return ["auto", "colab", "kaggle", "huggingface", "modal"]
     
     def on_template_selected(
         self,
@@ -279,8 +329,9 @@ class JobSubmissionTab(LoggerMixin):
         self,
         template_name: Optional[str],
         backend: str,
+        routing_strategy: str,
         dynamic_inputs: Dict[str, Any]
-    ) -> Tuple[gr.Textbox, gr.Markdown]:
+    ) -> Tuple[gr.Textbox, gr.Markdown, gr.HTML]:
         """
         Handle job submission.
         
@@ -292,21 +343,25 @@ class JobSubmissionTab(LoggerMixin):
         Args:
             template_name: Selected template name
             backend: Selected backend (or "auto")
+            routing_strategy: Routing strategy for automatic backend selection
             dynamic_inputs: Dictionary of input values from dynamic fields
             
         Returns:
             Tuple of (
                 job_id_output: Updated textbox with job ID,
-                status_message: Updated markdown with status/error message
+                status_message: Updated markdown with status/error message,
+                loading_indicator: Loading indicator HTML
             )
         """
         if not template_name:
+            error = format_validation_error(
+                "template",
+                "Please select a template"
+            )
             return (
                 gr.Textbox(value="", visible=False),
-                gr.Markdown(
-                    value="**Error:** Please select a template",
-                    visible=True
-                )
+                gr.Markdown(value=error.to_markdown(), visible=True),
+                gr.HTML(value="", visible=False)
             )
         
         try:
@@ -314,60 +369,80 @@ class JobSubmissionTab(LoggerMixin):
             metadata = self.template_service.get_template_metadata(template_name)
             
             if not metadata:
+                error = format_validation_error(
+                    "template",
+                    f"Template '{template_name}' not found"
+                )
                 return (
                     gr.Textbox(value="", visible=False),
-                    gr.Markdown(
-                        value=f"**Error:** Template '{template_name}' not found",
-                        visible=True
-                    )
+                    gr.Markdown(value=error.to_markdown(), visible=True),
+                    gr.HTML(value="", visible=False)
                 )
             
             # Validate inputs
-            # Note: We need to create a temporary Template instance for validation
-            # In a real implementation, we would get the actual template instance
-            # For now, we'll do basic validation using the metadata
             validation_errors = self._validate_inputs_from_metadata(
                 metadata,
                 dynamic_inputs
             )
             
             if validation_errors:
-                error_msg = "**Validation Errors:**\n" + "\n".join(
+                error_msg = "❌ **Validation Errors:**\n\n" + "\n".join(
                     f"- {err}" for err in validation_errors
                 )
                 return (
                     gr.Textbox(value="", visible=False),
-                    gr.Markdown(value=error_msg, visible=True)
+                    gr.Markdown(value=error_msg, visible=True),
+                    gr.HTML(value="", visible=False)
                 )
             
             # Determine backend
             backend_id = None if backend == "auto" else backend
             
-            # Submit job
+            # Submit job with routing strategy
             job_id = self.job_service.submit_job(
                 template_name=template_name,
                 inputs=dynamic_inputs,
-                backend=backend_id
+                backend=backend_id,
+                routing_strategy=routing_strategy
             )
             
-            success_msg = (
-                f"**Success!** Job submitted successfully.\n\n"
-                f"You can monitor the job in the Job Monitoring tab."
+            success_msg = create_success_message(
+                "Job submitted successfully",
+                {
+                    "Job ID": f"`{job_id}`",
+                    "Template": template_name,
+                    "Backend": backend,
+                    "Routing Strategy": routing_strategy,
+                    "Next Step": "Monitor the job in the **Job Monitoring** tab"
+                }
             )
             
             return (
                 gr.Textbox(value=job_id, visible=True),
-                gr.Markdown(value=success_msg, visible=True)
+                gr.Markdown(value=success_msg, visible=True),
+                gr.HTML(value="", visible=False)
             )
             
-        except Exception as e:
-            self.logger.error(f"Job submission failed: {e}")
+        except ValueError as e:
+            # Validation errors
+            self.logger.error(f"Validation error during job submission: {e}")
+            error = format_validation_error(
+                "job_submission",
+                sanitize_error_message(str(e))
+            )
             return (
                 gr.Textbox(value="", visible=False),
-                gr.Markdown(
-                    value=f"**Error:** Job submission failed: {str(e)}",
-                    visible=True
-                )
+                gr.Markdown(value=error.to_markdown(), visible=True),
+                gr.HTML(value="", visible=False)
+            )
+        except Exception as e:
+            # Generic errors
+            self.logger.error(f"Job submission failed: {e}", exc_info=True)
+            error = format_generic_error(e, "Job submission failed")
+            return (
+                gr.Textbox(value="", visible=False),
+                gr.Markdown(value=error.to_markdown(), visible=True),
+                gr.HTML(value="", visible=False)
             )
     
     def _validate_inputs_from_metadata(
@@ -416,3 +491,23 @@ class JobSubmissionTab(LoggerMixin):
                         )
         
         return errors
+    
+    def _get_loading_indicator_html(self) -> str:
+        """
+        Generate HTML for loading indicator.
+        
+        Returns:
+            HTML string with animated loading spinner
+        """
+        return """
+        <div style="display: flex; align-items: center; justify-content: center; padding: 20px;">
+            <div style="border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+            <span style="margin-left: 15px; font-size: 16px; color: #666;">Submitting job...</span>
+        </div>
+        """

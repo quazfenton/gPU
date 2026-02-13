@@ -314,7 +314,7 @@ class TestWorkflowService:
         workflow_json = "{ invalid json }"
         
         # Execute & Verify
-        with pytest.raises(ValueError, match="Invalid workflow"):
+        with pytest.raises(ValueError, match="Workflow.*error"):
             workflow_service.execute_workflow(workflow_json)
     
     def test_execute_workflow_validation_fails(self, workflow_service, mock_workflow_engine):
@@ -326,7 +326,7 @@ class TestWorkflowService:
         })
         
         # Execute & Verify
-        with pytest.raises(ValueError, match="Invalid workflow"):
+        with pytest.raises(ValueError, match="Workflow.*error"):
             workflow_service.execute_workflow(workflow_json)
     
     def test_execute_workflow_engine_error(self, workflow_service, mock_workflow_engine):
@@ -344,7 +344,7 @@ class TestWorkflowService:
         mock_workflow_engine.execute_workflow.side_effect = Exception("Engine error")
         
         # Execute & Verify
-        with pytest.raises(WorkflowExecutionError, match="Workflow execution failed"):
+        with pytest.raises(WorkflowExecutionError, match="Workflow.*error"):
             workflow_service.execute_workflow(workflow_json)
     
     def test_get_workflow_status_success(self, workflow_service, mock_workflow_engine):

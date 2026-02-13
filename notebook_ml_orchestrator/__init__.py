@@ -15,6 +15,8 @@ from .core.job_queue import JobQueueManager
 from .core.backend_router import MultiBackendRouter
 from .core.workflow_engine import WorkflowEngine
 from .core.batch_processor import BatchProcessor
+from .core.template_registry import TemplateRegistry
+from .orchestrator import Orchestrator
 
 __all__ = [
     "MLTemplate",
@@ -25,4 +27,6 @@ __all__ = [
     "MultiBackendRouter", 
     "WorkflowEngine",
     "BatchProcessor",
+    "TemplateRegistry",
+    "Orchestrator",
 ]

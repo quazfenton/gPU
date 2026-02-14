@@ -154,7 +154,37 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             
             return None
     
-    def update_job_status(self, job_id: str, status: JobStatus, result: Any = None):
+    def update_job_backend(self, job_id: str, backend_id: str) -> bool:
+        """
+        Update the backend assigned to a job.
+        
+        Args:
+            job_id: ID of the job to update
+            backend_id: ID of the backend to assign
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE jobs SET backend_id = ?, updated_at = ? WHERE id = ?",
+                    (backend_id, datetime.now().isoformat(), job_id)
+                )
+                conn.commit()
+                
+                # Update cache if present (if cache attribute exists)
+                with self._lock:
+                    if hasattr(self, '_job_cache') and job_id in self._job_cache:
+                        self._job_cache[job_id].backend_id = backend_id
+                
+                return cursor.rowcount > 0
+        except Exception as e:
+            self.logger.error(f"Failed to update job backend: {e}")
+            return False
+
+    def update_job_status(self, job_id: str, status: JobStatus, result: Optional[JobResult] = None):
         """
         Update job status and store results.
         

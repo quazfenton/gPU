@@ -312,13 +312,13 @@ class ColabBackend(Backend, LoggerMixin):
             # For this implementation, we'll simulate the execution flow
             # and provide a placeholder for where execution would happen
             
-            self.logger.warning(
-                "Colab programmatic execution not fully implemented. "
-                "Notebook created in Drive but requires manual execution or automation tool."
+            self.logger.info(
+                f"Notebook created in Drive. Please execute it manually or via automation: "
+                f"https://colab.research.google.com/drive/{notebook_id}"
             )
             
-            # Simulate execution (in real implementation, this would poll for completion)
-            execution_result = self._simulate_execution(job, notebook_id, timeout_seconds, start_time)
+            # Wait for execution results (functional polling instead of simulation)
+            execution_result = self._wait_for_results(job.id, timeout_seconds, start_time)
             
             execution_time = time.time() - start_time
             

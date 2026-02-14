@@ -27,6 +27,7 @@ class GUIConfig:
         enable_rate_limiting: Whether to enable rate limiting (default: True)
         rate_limit_per_minute: Maximum requests per minute per client (default: 60)
         rate_limit_per_hour: Maximum requests per hour per client (default: 1000)
+        upload_dir: Directory for file uploads (default: "uploads")
     """
     
     host: str = field(default="0.0.0.0")
@@ -42,6 +43,7 @@ class GUIConfig:
     enable_rate_limiting: bool = field(default=True)
     rate_limit_per_minute: int = field(default=60)
     rate_limit_per_hour: int = field(default=1000)
+    upload_dir: str = field(default="uploads")
     
     @classmethod
     def from_env(cls) -> "GUIConfig":
@@ -61,6 +63,7 @@ class GUIConfig:
             GUI_ENABLE_RATE_LIMITING: Enable rate limiting ("true"/"false", default: "true")
             GUI_RATE_LIMIT_PER_MINUTE: Requests per minute per client (default: 60)
             GUI_RATE_LIMIT_PER_HOUR: Requests per hour per client (default: 1000)
+            GUI_UPLOAD_DIR: Directory for file uploads (default: "uploads")
         
         Returns:
             GUIConfig instance with values from environment variables
@@ -78,7 +81,8 @@ class GUIConfig:
             session_timeout=int(os.getenv("GUI_SESSION_TIMEOUT", "3600")),
             enable_rate_limiting=os.getenv("GUI_ENABLE_RATE_LIMITING", "true").lower() == "true",
             rate_limit_per_minute=int(os.getenv("GUI_RATE_LIMIT_PER_MINUTE", "60")),
-            rate_limit_per_hour=int(os.getenv("GUI_RATE_LIMIT_PER_HOUR", "1000"))
+            rate_limit_per_hour=int(os.getenv("GUI_RATE_LIMIT_PER_HOUR", "1000")),
+            upload_dir=os.getenv("GUI_UPLOAD_DIR", "uploads")
         )
     
     @classmethod

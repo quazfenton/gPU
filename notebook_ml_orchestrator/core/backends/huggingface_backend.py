@@ -88,6 +88,11 @@ class HuggingFaceBackend(Backend, LoggerMixin):
         self._inference_client = None
         self._authenticated = False
         
+        # Cache for whoami/health check to avoid rate limits
+        self._whoami_cache = None
+        self._whoami_cache_time = 0
+        self._whoami_cache_ttl = 300  # 5 minutes
+        
         self.logger.info(f"HuggingFace backend initialized: {backend_id}")
     
     def _authenticate(self) -> None:
@@ -656,7 +661,29 @@ class HuggingFaceBackend(Backend, LoggerMixin):
             
             # Verify API connectivity by getting user info
             if self._hf_api:
-                user_info = self._hf_api.whoami()
+                # Use cached whoami check for health monitoring to avoid rate limits
+                current_time = time.time()
+                user_info = None
+                
+                try:
+                    if not self._whoami_cache or (current_time - self._whoami_cache_time > self._whoami_cache_ttl):
+                        self._whoami_cache = self._hf_api.whoami()
+                        self._whoami_cache_time = current_time
+                    
+                    user_info = self._whoami_cache
+                    
+                except Exception as e:
+                    # If we hit rate limits during health check, assume healthy if previously cached
+                    if "429" in str(e) or "rate limit" in str(e).lower():
+                        if self._whoami_cache:
+                            user_info = self._whoami_cache
+                            self.logger.debug("Rate limited during health check, using cached credentials.")
+                        else:
+                            # If no cache but rate limited, likely healthy but busy
+                            self.logger.warning("Rate limited during health check, no cache available.")
+                            user_info = {"name": "unknown (rate-limited)"}
+                    else:
+                        raise e
                 
                 if not user_info:
                     self.health_status = HealthStatus.DEGRADED

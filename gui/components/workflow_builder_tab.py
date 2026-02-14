@@ -113,8 +113,7 @@ class WorkflowBuilderTab(LoggerMixin):
                     gr.Markdown("#### Step Configuration")
                     step_config_panel = gr.JSON(
                         label="Step Configuration",
-                        value={},
-                        interactive=True
+                        value={}
                     )
                     
                     # Connection controls

@@ -59,6 +59,41 @@ python -m gui.main --share
 
 ## Configuration
 
+### Registering Backends
+
+The GUI requires backends to be registered before jobs can be executed. Backends are not auto-discovered and must be configured based on your deployment.
+
+To register backends, you can create a startup script or modify `gui/main.py` to register your backends. Example:
+
+```python
+from notebook_ml_orchestrator.core.backends.modal_backend import ModalBackend
+from notebook_ml_orchestrator.core.backends.kaggle_backend import KaggleBackend
+
+# In initialize_orchestrator_components function:
+# Register Modal backend
+modal_backend = ModalBackend(
+    backend_id="modal-1",
+    api_key=os.getenv("MODAL_API_KEY")
+)
+backend_router.register_backend(modal_backend)
+
+# Register Kaggle backend
+kaggle_backend = KaggleBackend(
+    backend_id="kaggle-1",
+    username=os.getenv("KAGGLE_USERNAME"),
+    key=os.getenv("KAGGLE_KEY")
+)
+backend_router.register_backend(kaggle_backend)
+```
+
+Without registered backends, you can still:
+- Browse templates
+- View template metadata
+- Monitor jobs (if any exist in the database)
+- Build workflows
+
+But you cannot submit new jobs until at least one backend is registered.
+
 ### Environment Variables
 
 The GUI can be configured using environment variables:

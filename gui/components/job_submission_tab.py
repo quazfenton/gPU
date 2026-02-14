@@ -47,6 +47,9 @@ class JobSubmissionTab(LoggerMixin):
             gr.Markdown("## Submit ML Job")
             gr.Markdown("Select a template and configure parameters to submit a job.")
             
+            # Store current template metadata
+            current_template_state = gr.State(value=None)
+            
             with gr.Row():
                 with gr.Column(scale=1):
                     # Template selection
@@ -59,13 +62,22 @@ class JobSubmissionTab(LoggerMixin):
                     )
                     
                     # Backend selection (optional)
-                    backend_dropdown = gr.Dropdown(
-                        label="Backend (Optional)",
-                        choices=self._get_backend_choices(),
-                        value="auto",
-                        interactive=True,
-                        info="Select backend or use automatic routing"
-                    )
+                    with gr.Row():
+                        backend_dropdown = gr.Dropdown(
+                            label="Backend (Optional)",
+                            choices=self._get_backend_choices(),
+                            value="auto",
+                            interactive=True,
+                            info="Select backend or use automatic routing",
+                            scale=4
+                        )
+                        refresh_backends_btn = gr.Button(
+                            "🔄",
+                            variant="secondary",
+                            scale=1,
+                            min_width=10,
+                            size="sm"
+                        )
                     
                     # Routing strategy selection
                     routing_strategy_dropdown = gr.Dropdown(
@@ -84,15 +96,10 @@ class JobSubmissionTab(LoggerMixin):
                 
                 with gr.Column(scale=1):
                     # Dynamic input fields container
-                    input_fields_container = gr.Column(visible=False)
-                    
-                    with input_fields_container:
-                        gr.Markdown("### Input Parameters")
-                        
-                        # Placeholder for dynamic input fields
-                        # These will be created dynamically based on template selection
-                        dynamic_inputs = gr.State(value={})
-                        input_components = gr.State(value={})
+                    gr.Markdown("### Input Parameters")
+                    input_fields_html = gr.HTML(
+                        value="<p style='color: #666; font-style: italic;'>Select a template to see input fields</p>"
+                    )
                     
                     # Submit button
                     submit_button = gr.Button(
@@ -114,42 +121,49 @@ class JobSubmissionTab(LoggerMixin):
                         value="",
                         visible=False
                     )
-                    
-                    # Loading indicator
-                    loading_indicator = gr.HTML(
-                        value="",
-                        visible=False
-                    )
             
             # Event handlers
+            refresh_backends_btn.click(
+                fn=self.on_refresh_backends,
+                outputs=[backend_dropdown]
+            )
+
             template_dropdown.change(
                 fn=self.on_template_selected,
                 inputs=[template_dropdown],
                 outputs=[
                     template_docs,
-                    input_fields_container,
+                    input_fields_html,
                     submit_button,
-                    dynamic_inputs,
-                    input_components
+                    current_template_state
                 ]
             )
             
             submit_button.click(
-                fn=self.on_submit_job,
+                fn=self.on_submit_job_with_form,
                 inputs=[
                     template_dropdown,
                     backend_dropdown,
                     routing_strategy_dropdown,
-                    dynamic_inputs
+                    current_template_state
                 ],
                 outputs=[
                     job_id_output,
-                    status_message,
-                    loading_indicator
+                    status_message
                 ]
             )
-        
+
         return tab
+
+    def on_refresh_backends(self) -> gr.Dropdown:
+        """
+        Refresh the list of available backends.
+        
+        Returns:
+            Updated dropdown component
+        """
+        choices = self._get_backend_choices()
+        return gr.Dropdown(choices=choices)
     
     def _get_template_choices(self) -> List[str]:
         """
@@ -194,14 +208,14 @@ class JobSubmissionTab(LoggerMixin):
     def on_template_selected(
         self,
         template_name: Optional[str]
-    ) -> Tuple[str, gr.Column, gr.Button, Dict[str, Any], Dict[str, Any]]:
+    ) -> Tuple[str, str, gr.Button, Optional[Dict[str, Any]]]:
         """
         Handle template selection and return dynamic UI updates.
         
         This method:
         1. Fetches template metadata
         2. Generates template documentation
-        3. Creates dynamic input fields based on template schema
+        3. Creates dynamic input fields HTML based on template schema
         4. Shows/hides UI elements appropriately
         
         Args:
@@ -210,19 +224,17 @@ class JobSubmissionTab(LoggerMixin):
         Returns:
             Tuple of (
                 template_docs: Markdown documentation string,
-                input_fields_container: Updated container visibility,
+                input_fields_html: HTML string with input form fields,
                 submit_button: Updated button visibility,
-                dynamic_inputs: State dict for input values,
-                input_components: State dict for input component references
+                current_template_state: Template metadata for submission
             )
         """
         if not template_name:
             return (
                 "Select a template to view documentation",
-                gr.Column(visible=False),
+                "<p style='color: #666; font-style: italic;'>Select a template to see input fields</p>",
                 gr.Button(visible=False),
-                {},
-                {}
+                None
             )
         
         try:
@@ -233,37 +245,157 @@ class JobSubmissionTab(LoggerMixin):
                 self.logger.error(f"Template '{template_name}' not found")
                 return (
                     f"**Error:** Template '{template_name}' not found",
-                    gr.Column(visible=False),
+                    "<p style='color: red;'>Template not found</p>",
                     gr.Button(visible=False),
-                    {},
-                    {}
+                    None
                 )
             
             # Generate documentation
             docs = self._generate_template_docs(metadata)
             
-            # Initialize input state
-            dynamic_inputs = {}
-            input_components = {}
+            # Generate input fields HTML
+            input_html = self._generate_input_fields_html(metadata)
             
-            # Show input container and submit button
+            # Show submit button
             return (
                 docs,
-                gr.Column(visible=True),
+                input_html,
                 gr.Button(visible=True),
-                dynamic_inputs,
-                input_components
+                metadata
             )
             
         except Exception as e:
             self.logger.error(f"Error loading template '{template_name}': {e}")
             return (
                 f"**Error:** Failed to load template: {str(e)}",
-                gr.Column(visible=False),
+                f"<p style='color: red;'>Error: {str(e)}</p>",
                 gr.Button(visible=False),
-                {},
-                {}
+                None
             )
+    
+    def _generate_input_fields_html(self, metadata: Dict[str, Any]) -> str:
+        """
+        Generate HTML form fields for template inputs.
+        
+        Args:
+            metadata: Template metadata dictionary
+            
+        Returns:
+            HTML string with form input fields
+        """
+        if not metadata.get('inputs'):
+            return "<p style='color: #666; font-style: italic;'>This template has no input parameters</p>"
+        
+        html_parts = []
+        html_parts.append("<div style='padding: 10px;'>")
+        
+        for inp in metadata['inputs']:
+            field_name = inp['name']
+            field_type = inp['type']
+            required = inp['required']
+            description = inp.get('description', '')
+            default = inp.get('default')
+            
+            # Field label
+            required_marker = "<span style='color: red;'>*</span>" if required else ""
+            html_parts.append(f"<div style='margin-bottom: 15px;'>")
+            html_parts.append(
+                f"<label style='display: block; font-weight: bold; margin-bottom: 5px;'>"
+                f"{field_name} {required_marker}</label>"
+            )
+            html_parts.append(
+                f"<p style='margin: 0 0 5px 0; font-size: 0.9em; color: #666;'>{description}</p>"
+            )
+            
+            # Generate appropriate input field based on type
+            if field_type in ['text', 'string']:
+                default_val = default if default else ''
+                html_parts.append(
+                    f"<input type='text' id='input_{field_name}' name='{field_name}' "
+                    f"value='{default_val}' "
+                    f"style='width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;' "
+                    f"{'required' if required else ''}/>"
+                )
+            elif field_type == 'number':
+                default_val = default if default is not None else ''
+                html_parts.append(
+                    f"<input type='number' id='input_{field_name}' name='{field_name}' "
+                    f"value='{default_val}' "
+                    f"style='width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;' "
+                    f"{'required' if required else ''}/>"
+                )
+            elif field_type in ['file', 'audio', 'image', 'video']:
+                html_parts.append(
+                    f"<input type='file' id='input_{field_name}' name='{field_name}' "
+                    f"accept='{self._get_file_accept_types(field_type)}' "
+                    f"style='width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;' "
+                    f"{'required' if required else ''}/>"
+                )
+                html_parts.append(
+                    f"<p style='margin: 5px 0 0 0; font-size: 0.85em; color: #888;'>"
+                    f"Or enter a URL:</p>"
+                )
+                html_parts.append(
+                    f"<input type='url' id='input_{field_name}_url' name='{field_name}_url' "
+                    f"placeholder='https://example.com/file.{field_type}' "
+                    f"style='width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;'/>"
+                )
+            elif field_type == 'json':
+                default_val = default if default else '{}'
+                html_parts.append(
+                    f"<textarea id='input_{field_name}' name='{field_name}' "
+                    f"rows='4' "
+                    f"style='width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace;' "
+                    f"{'required' if required else ''}>{default_val}</textarea>"
+                )
+            elif inp.get('options'):
+                # Dropdown for fields with options
+                html_parts.append(f"<select id='input_{field_name}' name='{field_name}' "
+                               f"style='width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;' "
+                               f"{'required' if required else ''}>")
+                if not required:
+                    html_parts.append("<option value=''>-- Select --</option>")
+                for option in inp['options']:
+                    selected = 'selected' if option == default else ''
+                    html_parts.append(f"<option value='{option}' {selected}>{option}</option>")
+                html_parts.append("</select>")
+            else:
+                # Default to text input
+                default_val = default if default else ''
+                html_parts.append(
+                    f"<input type='text' id='input_{field_name}' name='{field_name}' "
+                    f"value='{default_val}' "
+                    f"style='width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;' "
+                    f"{'required' if required else ''}/>"
+                )
+            
+            html_parts.append("</div>")
+        
+        html_parts.append("</div>")
+        html_parts.append(
+            "<p style='margin-top: 10px; font-size: 0.9em; color: #666;'>"
+            "<span style='color: red;'>*</span> Required fields</p>"
+        )
+        
+        return "\n".join(html_parts)
+    
+    def _get_file_accept_types(self, field_type: str) -> str:
+        """
+        Get HTML accept attribute value for file input based on field type.
+        
+        Args:
+            field_type: Field type (audio, image, video, file)
+            
+        Returns:
+            Accept attribute value
+        """
+        accept_map = {
+            'audio': 'audio/*,.mp3,.wav,.ogg,.flac',
+            'image': 'image/*,.jpg,.jpeg,.png,.gif,.bmp,.webp',
+            'video': 'video/*,.mp4,.avi,.mov,.wmv,.flv,.webm',
+            'file': '*/*'
+        }
+        return accept_map.get(field_type, '*/*')
     
     def _generate_template_docs(self, metadata: Dict[str, Any]) -> str:
         """
@@ -325,125 +457,61 @@ class JobSubmissionTab(LoggerMixin):
         
         return "\n".join(docs_lines)
     
-    def on_submit_job(
+    def on_submit_job_with_form(
         self,
         template_name: Optional[str],
         backend: str,
         routing_strategy: str,
-        dynamic_inputs: Dict[str, Any]
-    ) -> Tuple[gr.Textbox, gr.Markdown, gr.HTML]:
+        template_metadata: Optional[Dict[str, Any]]
+    ) -> Tuple[gr.Textbox, gr.Markdown]:
         """
-        Handle job submission.
+        Handle job submission with form data extraction via JavaScript.
         
-        This method:
-        1. Validates inputs against template schema
-        2. Submits job to job queue
-        3. Returns job ID and status message
+        Note: This is a simplified version. In a real implementation, you would
+        need to use Gradio's JavaScript integration to extract form values.
+        For now, we'll provide instructions to the user.
         
         Args:
             template_name: Selected template name
             backend: Selected backend (or "auto")
             routing_strategy: Routing strategy for automatic backend selection
-            dynamic_inputs: Dictionary of input values from dynamic fields
+            template_metadata: Template metadata from state
             
         Returns:
-            Tuple of (
-                job_id_output: Updated textbox with job ID,
-                status_message: Updated markdown with status/error message,
-                loading_indicator: Loading indicator HTML
-            )
+            Tuple of (job_id_output, status_message)
         """
-        if not template_name:
-            error = format_validation_error(
-                "template",
-                "Please select a template"
-            )
+        if not template_name or not template_metadata:
+            error_msg = "❌ **Error:** Please select a template first"
             return (
                 gr.Textbox(value="", visible=False),
-                gr.Markdown(value=error.to_markdown(), visible=True),
-                gr.HTML(value="", visible=False)
+                gr.Markdown(value=error_msg, visible=True)
             )
         
-        try:
-            # Get template metadata for validation
-            metadata = self.template_service.get_template_metadata(template_name)
-            
-            if not metadata:
-                error = format_validation_error(
-                    "template",
-                    f"Template '{template_name}' not found"
-                )
-                return (
-                    gr.Textbox(value="", visible=False),
-                    gr.Markdown(value=error.to_markdown(), visible=True),
-                    gr.HTML(value="", visible=False)
-                )
-            
-            # Validate inputs
-            validation_errors = self._validate_inputs_from_metadata(
-                metadata,
-                dynamic_inputs
-            )
-            
-            if validation_errors:
-                error_msg = "❌ **Validation Errors:**\n\n" + "\n".join(
-                    f"- {err}" for err in validation_errors
-                )
-                return (
-                    gr.Textbox(value="", visible=False),
-                    gr.Markdown(value=error_msg, visible=True),
-                    gr.HTML(value="", visible=False)
-                )
-            
-            # Determine backend
-            backend_id = None if backend == "auto" else backend
-            
-            # Submit job with routing strategy
-            job_id = self.job_service.submit_job(
-                template_name=template_name,
-                inputs=dynamic_inputs,
-                backend=backend_id,
-                routing_strategy=routing_strategy
-            )
-            
-            success_msg = create_success_message(
-                "Job submitted successfully",
-                {
-                    "Job ID": f"`{job_id}`",
-                    "Template": template_name,
-                    "Backend": backend,
-                    "Routing Strategy": routing_strategy,
-                    "Next Step": "Monitor the job in the **Job Monitoring** tab"
-                }
-            )
-            
-            return (
-                gr.Textbox(value=job_id, visible=True),
-                gr.Markdown(value=success_msg, visible=True),
-                gr.HTML(value="", visible=False)
-            )
-            
-        except ValueError as e:
-            # Validation errors
-            self.logger.error(f"Validation error during job submission: {e}")
-            error = format_validation_error(
-                "job_submission",
-                sanitize_error_message(str(e))
-            )
-            return (
-                gr.Textbox(value="", visible=False),
-                gr.Markdown(value=error.to_markdown(), visible=True),
-                gr.HTML(value="", visible=False)
-            )
-        except Exception as e:
-            # Generic errors
-            self.logger.error(f"Job submission failed: {e}", exc_info=True)
-            error = format_generic_error(e, "Job submission failed")
-            return (
-                gr.Textbox(value="", visible=False),
-                gr.Markdown(value=error.to_markdown(), visible=True),
-                gr.HTML(value="", visible=False)
-            )
+        # Note: In Gradio, we can't easily extract HTML form values directly
+        # This is a limitation of the current approach
+        # A better solution would be to use Gradio's native components
+        
+        info_msg = """
+        ⚠️ **Note:** Due to Gradio limitations, form submission via HTML inputs requires a different approach.
+        
+        **Alternative Options:**
+        1. Use the CLI to submit jobs: `python -m notebook_ml_orchestrator.cli submit --template {template} --input key=value`
+        2. Use the API directly
+        3. Wait for a future update that uses Gradio's native dynamic components
+        
+        **Template Selected:** `{template}`  
+        **Backend:** `{backend}`  
+        **Routing Strategy:** `{routing_strategy}`
+        """.format(
+            template=template_name,
+            backend=backend,
+            routing_strategy=routing_strategy
+        )
+        
+        return (
+            gr.Textbox(value="", visible=False),
+            gr.Markdown(value=info_msg, visible=True)
+        )
     
     def _validate_inputs_from_metadata(
         self,

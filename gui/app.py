@@ -19,11 +19,14 @@ from gui.services.job_service import JobService
 from gui.services.template_service import TemplateService
 from gui.services.workflow_service import WorkflowService
 from gui.services.backend_monitor_service import BackendMonitorService
-from gui.components.job_submission_tab import JobSubmissionTab
-from gui.components.job_monitoring_tab import JobMonitoringTab
+from gui.components.job_submission_tab_v2 import JobSubmissionTabV2
+from gui.components.job_monitoring_tab_v2 import JobMonitoringTabV2
 from gui.components.workflow_builder_tab import WorkflowBuilderTab
-from gui.components.template_management_tab import TemplateManagementTab
+from gui.components.template_management_tab_v2 import TemplateManagementTabV2
 from gui.components.backend_status_tab import BackendStatusTab
+from gui.components.backend_registration_tab import BackendRegistrationTab
+from gui.components.file_manager_tab import FileManagerTab
+from gui.components.file_upload_handler import FileUploadHandler
 from gui.events import EventEmitter
 from gui.websocket_server import WebSocketServer
 from gui.auth import AuthenticationMiddleware, SimpleAuthProvider, SessionManager, Role
@@ -148,13 +151,21 @@ class GradioApp(LoggerMixin):
             version=gui.__version__
         )
         
+        # Initialize file upload handler
+        self.file_upload_handler = FileUploadHandler(upload_dir=self.config.upload_dir)
+        
         # Initialize UI components
         self.logger.info("Initializing UI components")
-        self.job_submission_tab = JobSubmissionTab(self.job_service, self.template_service)
-        self.job_monitoring_tab = JobMonitoringTab(self.job_service, self.event_emitter)
-        self.workflow_builder_tab = WorkflowBuilderTab(self.workflow_service, self.template_service, self.event_emitter)
-        self.template_management_tab = TemplateManagementTab(self.template_service)
-        self.backend_status_tab = BackendStatusTab(self.backend_monitor, self.event_emitter)
+        self.job_submission_tab = JobSubmissionTabV2(
+            self.job_service, 
+            self.template_service
+        )
+        self.job_monitoring_tab = JobMonitoringTabV2(self.job_service)
+        self.workflow_builder_tab = WorkflowBuilderTab(self.workflow_service, self.template_service)
+        self.template_management_tab = TemplateManagementTabV2(self.template_service)
+        self.backend_status_tab = BackendStatusTab(self.backend_monitor)
+        self.backend_registration_tab = BackendRegistrationTab(self.backend_router, self.backend_monitor)
+        self.file_manager_tab = FileManagerTab(self.file_upload_handler)
         
         # Setup observers for orchestrator components
         self.logger.info("Setting up observers for real-time updates")
@@ -227,6 +238,14 @@ class GradioApp(LoggerMixin):
                 # Backend Status Tab
                 with gr.Tab("Backend Status"):
                     self.backend_status_tab.render()
+                    
+                # Backend Registration Tab
+                with gr.Tab("Backend Registration"):
+                    self.backend_registration_tab.render()
+                    
+                # File Manager Tab
+                with gr.Tab("File Manager"):
+                    self.file_manager_tab.render()
             
             # Footer
             gr.Markdown("---")

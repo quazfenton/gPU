@@ -228,10 +228,15 @@ class Orchestrator:
                 f"(type: {backend.type.value})"
             )
             
-            # Update job with selected backend (don't change status, it's already QUEUED)
+            # Update job with selected backend
             job.backend_id = backend.id
-            # Note: We don't call update_job_status here because the job is already QUEUED
-            # The backend will update the status when it starts executing
+            
+            # Persist the backend assignment to the database
+            self.job_queue.update_job_backend(job_id, backend.id)
+            
+            logger.info(
+                f"Job {job_id} assigned to backend '{backend.id}' (persisted)"
+            )
             
         except Exception as e:
             logger.error(f"Failed to route job {job_id}: {str(e)}")

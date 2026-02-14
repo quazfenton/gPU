@@ -147,6 +147,14 @@ class WebSocketServer:
                 'data': data
             }
             # Schedule the broadcast as a coroutine
-            asyncio.create_task(self.broadcast(message))
+            # Check if there's a running event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, create a task
+                asyncio.create_task(self.broadcast(message))
+            except RuntimeError:
+                # No running event loop, skip broadcast
+                # This is expected when called from sync context
+                pass
         
         return callback

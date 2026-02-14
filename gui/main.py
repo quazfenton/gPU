@@ -231,9 +231,18 @@ def initialize_orchestrator_components(db_path: str):
     workflow_engine = WorkflowEngine()
     print("  ✓ Workflow engine initialized")
     
-    # Initialize template registry
+    # Initialize template registry and discover templates
     template_registry = TemplateRegistry()
-    print("  ✓ Template registry initialized")
+    template_count = template_registry.discover_templates()
+    print(f"  ✓ Template registry initialized ({template_count} templates discovered)")
+    
+    # Note: Backends need to be registered separately based on your deployment configuration
+    # For example, you would register Modal, Kaggle, HuggingFace, or local backends here
+    # Example: backend_router.register_backend(modal_backend)
+    
+    if len(backend_router.backends) == 0:
+        print("  ⚠ Warning: No backends registered. Jobs cannot be executed until backends are configured.")
+        print("    To register backends, see the documentation on backend configuration.")
     
     return job_queue, backend_router, workflow_engine, template_registry
 
@@ -318,7 +327,7 @@ def main():
     
     # Setup logging
     log_level = 'DEBUG' if args.debug else 'INFO'
-    setup_logging(level=log_level)
+    setup_logging(log_level=log_level)
     
     # Get logger for main module
     logger = logging.getLogger('gui.main')

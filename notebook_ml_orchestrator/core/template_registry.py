@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Template-Backend Support Mapping
 # Maps template names to the list of backend IDs that support them
 TEMPLATE_BACKEND_SUPPORT = {
+    # Core templates
     "image-generation": ["modal", "huggingface"],
     "text-generation": ["modal", "huggingface"],
     "image-classification": ["modal", "huggingface", "kaggle"],
@@ -37,6 +38,35 @@ TEMPLATE_BACKEND_SUPPORT = {
     "data-processing": ["kaggle", "modal"],
     "batch-inference": ["modal", "kaggle"],
     "embeddings": ["huggingface", "modal"],
+    # Audio templates
+    "speech-recognition": ["modal", "huggingface", "kaggle"],
+    "audio-generation": ["modal", "huggingface"],
+    "music-processing": ["modal", "kaggle"],
+    "audio-classification": ["modal", "huggingface", "kaggle"],
+    "text-to-speech": ["modal", "huggingface"],
+    # Vision templates
+    "object-detection": ["modal", "huggingface", "kaggle"],
+    "image-segmentation": ["modal", "huggingface", "kaggle"],
+    "video-processing": ["modal", "kaggle"],
+    "style-transfer": ["modal", "colab"],
+    "face-detection": ["modal", "huggingface"],
+    "data-augmentation": ["modal", "kaggle", "colab"],
+    "image-upscaling": ["modal", "huggingface"],
+    "ocr": ["modal", "kaggle", "colab"],
+    # Language templates
+    "named-entity-recognition": ["modal", "huggingface", "kaggle"],
+    "sentiment-analysis": ["modal", "huggingface", "kaggle"],
+    "translation": ["modal", "huggingface"],
+    "summarization": ["modal", "huggingface"],
+    "code-generation": ["modal", "huggingface"],
+    "text-embedding": ["modal", "huggingface"],
+    "zero-shot-classification": ["modal", "huggingface"],
+    "text-similarity": ["modal", "huggingface"],
+    # Multimodal templates
+    "image-captioning": ["modal", "huggingface"],
+    "visual-question-answering": ["modal", "huggingface"],
+    "text-to-image": ["modal", "huggingface"],
+    "document-qa": ["modal", "huggingface", "kaggle"],
 }
 
 

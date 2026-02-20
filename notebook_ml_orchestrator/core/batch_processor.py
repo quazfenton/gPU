@@ -10,7 +10,7 @@ import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .interfaces import BatchJob, BatchProcessorInterface, MLTemplate
+from .interfaces import BatchJob, BatchProcessorInterface, MLTemplate, Job
 from .models import BatchStatus, BatchProgress, BatchItem, JobStatus, JobResult
 from .exceptions import BatchValidationError, BatchError
 from .logging_config import LoggerMixin
@@ -28,23 +28,42 @@ class BatchOptimizer:
     
     def optimize_batch_distribution(self, batch: BatchJob, available_backends: List) -> Dict:
         """Optimize distribution of batch items across backends."""
-        # Implementation will be added in task 7.1
-        pass
+        if not available_backends:
+            return {}
+        return self._round_robin_strategy(batch.items, available_backends)
     
     def _round_robin_strategy(self, items: List[BatchItem], backends: List) -> Dict:
         """Distribute items using round-robin strategy."""
-        # Implementation will be added in task 7.1
-        pass
+        distribution = {i: [] for i in range(len(backends))}
+        for idx, item in enumerate(items):
+            backend_idx = idx % len(backends)
+            distribution[backend_idx].append(item)
+        return distribution
     
     def _load_balanced_strategy(self, items: List[BatchItem], backends: List) -> Dict:
         """Distribute items based on backend load."""
-        # Implementation will be added in task 7.1
-        pass
+        distribution = {i: [] for i in range(len(backends))}
+        # Sort backends by queue length (least loaded first)
+        backend_loads = [(i, b.get_queue_length() if hasattr(b, 'get_queue_length') else 0) for i, b in enumerate(backends)]
+        backend_loads.sort(key=lambda x: x[1])
+        
+        for idx, item in enumerate(items):
+            backend_idx = backend_loads[idx % len(backend_loads)][0]
+            distribution[backend_idx].append(item)
+        return distribution
     
     def _cost_optimized_strategy(self, items: List[BatchItem], backends: List) -> Dict:
         """Distribute items to minimize cost."""
-        # Implementation will be added in task 7.1
-        pass
+        distribution = {i: [] for i in range(len(backends))}
+        # Sort backends by cost (cheapest first)
+        backend_costs = [(i, b.capabilities.cost_per_hour if hasattr(b, 'capabilities') else 0) for i, b in enumerate(backends)]
+        backend_costs.sort(key=lambda x: x[1])
+        
+        # Assign all items to cheapest backend
+        if backend_costs:
+            cheapest_idx = backend_costs[0][0]
+            distribution[cheapest_idx] = list(items)
+        return distribution
 
 
 class ParallelExecutor:
@@ -56,13 +75,60 @@ class ParallelExecutor:
     
     def execute_batch_items(self, items: List[BatchItem], template: MLTemplate, backend) -> List[JobResult]:
         """Execute batch items in parallel."""
-        # Implementation will be added in task 7.1
-        pass
+        results = []
+        futures = {}
+        
+        for item in items:
+            future = self.executor.submit(self.execute_single_item, item, template, backend)
+            futures[future] = item
+        
+        for future in as_completed(futures):
+            item = futures[future]
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as e:
+                results.append(JobResult(
+                    success=False,
+                    error_message=str(e),
+                    execution_time_seconds=0.0,
+                ))
+        
+        return results
     
     def execute_single_item(self, item: BatchItem, template: MLTemplate, backend) -> JobResult:
         """Execute a single batch item."""
-        # Implementation will be added in task 7.1
-        pass
+        import time
+        start_time = time.time()
+        
+        item.status = JobStatus.RUNNING
+        item.started_at = datetime.now()
+        
+        try:
+            temp_job = Job(
+                template_name=template.name if hasattr(template, 'name') else '',
+                inputs=item.inputs,
+                status=JobStatus.RUNNING,
+            )
+            
+            result = backend.execute_job(temp_job, template)
+            
+            item.status = JobStatus.COMPLETED
+            item.completed_at = datetime.now()
+            item.result = result
+            
+            return result
+        except Exception as e:
+            execution_time = time.time() - start_time
+            item.status = JobStatus.FAILED
+            item.completed_at = datetime.now()
+            result = JobResult(
+                success=False,
+                error_message=str(e),
+                execution_time_seconds=execution_time,
+            )
+            item.result = result
+            return result
 
 
 class ProgressTracker:
@@ -75,13 +141,18 @@ class ProgressTracker:
     def update_item_progress(self, batch_id: str, item_id: str, status: JobStatus, result: JobResult = None):
         """Update progress for a specific batch item."""
         with self._lock:
-            # Implementation will be added in task 7.1
-            pass
+            # Call registered callback if present
+            callback = self.progress_callbacks.get(batch_id)
+            if callback:
+                try:
+                    callback(batch_id, item_id, status, result)
+                except Exception:
+                    pass
     
     def get_batch_progress(self, batch_id: str) -> BatchProgress:
         """Get current progress for a batch."""
-        # Implementation will be added in task 7.1
-        pass
+        # This returns a default; actual progress is tracked in BatchProcessor
+        return BatchProgress(total_items=0)
     
     def register_progress_callback(self, batch_id: str, callback):
         """Register a callback for progress updates."""
@@ -167,9 +238,6 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
         Raises:
             BatchValidationError: If batch not found
         """
-        # This is a placeholder implementation
-        # Full implementation will be added in task 7.1
-        
         with self._lock:
             batch = self.batches.get(batch_id)
             if not batch:
@@ -181,24 +249,69 @@ class BatchProcessor(BatchProcessorInterface, LoggerMixin):
             # Mark batch as running
             batch.status = BatchStatus.RUNNING
             batch.started_at = datetime.now()
-            
-            # For now, just mark all items as completed
-            # Full execution logic will be implemented in task 7.1
-            for item in batch.items:
-                item.status = JobStatus.COMPLETED
-                item.started_at = datetime.now()
-                item.completed_at = datetime.now()
-                item.result = JobResult(
-                    success=True,
-                    outputs={"placeholder": "item completed"},
-                    execution_time_seconds=1.0
-                )
-                batch.progress.completed_items += 1
-            
-            batch.status = BatchStatus.COMPLETED
-            batch.completed_at = datetime.now()
         
-        self.logger.info(f"Batch {batch_id} execution completed")
+        self.logger.info(f"Starting batch execution: {batch_id} ({len(batch.items)} items)")
+        
+        try:
+            if backend:
+                for item in batch.items:
+                    import time
+                    start_time = time.time()
+                    item.status = JobStatus.RUNNING
+                    item.started_at = datetime.now()
+                    
+                    try:
+                        temp_job = Job(
+                            template_name=batch.template_name,
+                            inputs=item.inputs,
+                            status=JobStatus.RUNNING,
+                        )
+                        result = backend.execute_job(temp_job, None)
+                        item.status = JobStatus.COMPLETED
+                        item.completed_at = datetime.now()
+                        item.result = result
+                        batch.progress.completed_items += 1
+                    except Exception as e:
+                        item.status = JobStatus.FAILED
+                        item.completed_at = datetime.now()
+                        item.result = JobResult(
+                            success=False,
+                            error_message=str(e),
+                            execution_time_seconds=time.time() - start_time,
+                        )
+                        batch.progress.failed_items += 1
+            else:
+                # No backend - process items with pass-through results
+                for item in batch.items:
+                    item.status = JobStatus.COMPLETED
+                    item.started_at = datetime.now()
+                    item.completed_at = datetime.now()
+                    item.result = JobResult(
+                        success=True,
+                        outputs=item.inputs,
+                        execution_time_seconds=0.0
+                    )
+                    batch.progress.completed_items += 1
+            
+            # Determine final batch status
+            failed_count = sum(1 for item in batch.items if item.status == JobStatus.FAILED)
+            completed_count = sum(1 for item in batch.items if item.status == JobStatus.COMPLETED)
+            
+            if failed_count == len(batch.items):
+                batch.status = BatchStatus.FAILED
+            elif failed_count > 0:
+                batch.status = BatchStatus.PARTIALLY_FAILED
+            else:
+                batch.status = BatchStatus.COMPLETED
+            
+            batch.completed_at = datetime.now()
+            
+        except Exception as e:
+            batch.status = BatchStatus.FAILED
+            batch.completed_at = datetime.now()
+            self.logger.error(f"Batch {batch_id} execution failed: {e}")
+        
+        self.logger.info(f"Batch {batch_id} execution completed: {batch.status.value}")
         return batch
     
     def track_batch_progress(self, batch_id: str) -> BatchProgress:

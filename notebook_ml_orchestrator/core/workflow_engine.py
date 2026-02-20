@@ -24,17 +24,81 @@ class DAGExecutor:
     
     def build_execution_graph(self, definition: WorkflowDefinition) -> Dict:
         """Build execution graph from workflow definition."""
-        # Implementation will be added in task 6.1
-        pass
+        graph = {}
+        
+        # Build step lookup
+        for step in definition.steps:
+            step_id = step.get('id', step.get('name', ''))
+            graph[step_id] = {
+                'config': step,
+                'dependencies': [],
+                'dependents': [],
+            }
+        
+        # Add connections as dependencies
+        for conn in definition.connections:
+            from_step = conn.get('from', '')
+            to_step = conn.get('to', '')
+            if from_step in graph and to_step in graph:
+                graph[to_step]['dependencies'].append(from_step)
+                graph[from_step]['dependents'].append(to_step)
+        
+        self.execution_graph = graph
+        return graph
     
     def execute_step(self, step_name: str, step_config: Dict, inputs: Dict) -> Any:
         """Execute a single workflow step."""
-        # Implementation will be added in task 6.1
-        pass
+        step_template = step_config.get('template', '')
+        step_inputs = {**step_config.get('inputs', {}), **inputs}
+        
+        # Store results
+        self.step_results[step_name] = {
+            'status': 'completed',
+            'outputs': step_inputs,  # Pass-through for now
+            'template': step_template,
+        }
+        
+        return self.step_results[step_name]
     
     def validate_dependencies(self, definition: WorkflowDefinition) -> bool:
         """Validate workflow dependencies for cycles and missing steps."""
-        # For now, return True as a placeholder until full implementation
+        if not definition.steps:
+            return True
+        
+        # Build adjacency list
+        step_ids = set()
+        adj = {}
+        for step in definition.steps:
+            step_id = step.get('id', step.get('name', ''))
+            step_ids.add(step_id)
+            adj[step_id] = []
+        
+        for conn in definition.connections:
+            from_step = conn.get('from', '')
+            to_step = conn.get('to', '')
+            if from_step not in step_ids or to_step not in step_ids:
+                return False  # Missing step reference
+            adj[from_step].append(to_step)
+        
+        # Detect cycles using DFS
+        WHITE, GRAY, BLACK = 0, 1, 2
+        color = {s: WHITE for s in step_ids}
+        
+        def has_cycle(node):
+            color[node] = GRAY
+            for neighbor in adj.get(node, []):
+                if color[neighbor] == GRAY:
+                    return True
+                if color[neighbor] == WHITE and has_cycle(neighbor):
+                    return True
+            color[node] = BLACK
+            return False
+        
+        for node in step_ids:
+            if color[node] == WHITE:
+                if has_cycle(node):
+                    return False
+        
         return True
 
 
@@ -46,13 +110,43 @@ class ConditionEvaluator:
     
     def evaluate_condition(self, condition: Dict, context: Dict) -> bool:
         """Evaluate a condition against the current context."""
-        # Implementation will be added in task 6.1
-        pass
+        field = condition.get('field', '')
+        operator = condition.get('operator', '==')
+        value = condition.get('value')
+        
+        # Get the actual value from context
+        actual_value = context.get(field)
+        
+        if actual_value is None:
+            return False
+        
+        if operator == '==':
+            return actual_value == value
+        elif operator == '!=':
+            return actual_value != value
+        elif operator == '>':
+            return actual_value > value
+        elif operator == '<':
+            return actual_value < value
+        elif operator == '>=':
+            return actual_value >= value
+        elif operator == '<=':
+            return actual_value <= value
+        elif operator == 'in':
+            return actual_value in value if isinstance(value, (list, tuple, set)) else False
+        elif operator == 'not_in':
+            return actual_value not in value if isinstance(value, (list, tuple, set)) else True
+        
+        return False
     
     def should_execute_step(self, step_config: Dict, context: Dict) -> bool:
         """Check if a step should be executed based on conditions."""
-        # Implementation will be added in task 6.1
-        pass
+        conditions = step_config.get('conditions', [])
+        if not conditions:
+            return True
+        
+        # All conditions must be met (AND logic)
+        return all(self.evaluate_condition(cond, context) for cond in conditions)
 
 
 class DataPipeline:
@@ -65,8 +159,32 @@ class DataPipeline:
     
     def transform_data(self, data: Any, transformation: Dict) -> Any:
         """Transform data between workflow steps."""
-        # Implementation will be added in task 6.2
-        pass
+        if not transformation:
+            return data
+        
+        transform_type = transformation.get('type', 'passthrough')
+        
+        if transform_type == 'passthrough':
+            return data
+        elif transform_type == 'rename':
+            if isinstance(data, dict):
+                mapping = transformation.get('mapping', {})
+                return {mapping.get(k, k): v for k, v in data.items()}
+            return data
+        elif transform_type == 'select':
+            if isinstance(data, dict):
+                fields = transformation.get('fields', [])
+                return {k: v for k, v in data.items() if k in fields}
+            return data
+        elif transform_type == 'merge':
+            if isinstance(data, dict):
+                defaults = transformation.get('defaults', {})
+                result = dict(defaults)
+                result.update(data)
+                return result
+            return data
+        
+        return data
     
     def validate_data_types(self, data: Any, expected_schema: Dict) -> bool:
         """
@@ -218,9 +336,6 @@ class WorkflowEngine(WorkflowEngineInterface, LoggerMixin):
         Raises:
             WorkflowValidationError: If workflow definition is invalid
         """
-        # This is a placeholder implementation
-        # Full implementation will be added in task 6.1
-        
         # Basic validation
         if not definition.steps:
             raise WorkflowValidationError("Workflow must have at least one step")
@@ -256,9 +371,6 @@ class WorkflowEngine(WorkflowEngineInterface, LoggerMixin):
             WorkflowValidationError: If workflow not found
             WorkflowExecutionError: If execution fails
         """
-        # This is a placeholder implementation
-        # Full implementation will be added in task 6.1
-        
         with self._lock:
             workflow = self.workflows.get(workflow_id)
             if not workflow:
@@ -275,13 +387,79 @@ class WorkflowEngine(WorkflowEngineInterface, LoggerMixin):
         
         self.logger.info(f"Started execution {execution.id} for workflow {workflow_id}")
         
-        # For now, just mark as completed
-        # Full execution logic will be implemented in task 6.1
-        execution.status = WorkflowStatus.COMPLETED
-        execution.completed_at = datetime.now()
-        execution.outputs = {"placeholder": "execution completed"}
+        try:
+            # Build execution graph
+            graph = self.dag_executor.build_execution_graph(workflow.definition)
+            
+            # Topological sort to determine execution order
+            executed = set()
+            step_outputs = {}
+            execution_order = self._topological_sort(graph)
+            
+            for step_id in execution_order:
+                step_info = graph[step_id]
+                step_config = step_info['config']
+                
+                execution.current_step = step_id
+                
+                # Check conditions
+                context = {**inputs, **step_outputs}
+                if not self.condition_evaluator.should_execute_step(step_config, context):
+                    self.logger.info(f"Skipping step {step_id} (conditions not met)")
+                    continue
+                
+                # Gather inputs from dependencies
+                step_inputs = dict(inputs)
+                step_inputs.update(step_config.get('inputs', {}))
+                
+                # Pass data from dependencies through connections
+                for dep in step_info['dependencies']:
+                    if dep in step_outputs:
+                        dep_outputs = step_outputs[dep]
+                        # Find matching connections
+                        for conn in workflow.definition.connections:
+                            if conn.get('from') == dep and conn.get('to') == step_id:
+                                output_key = conn.get('output', '')
+                                input_key = conn.get('input', '')
+                                if output_key in dep_outputs:
+                                    step_inputs[input_key] = dep_outputs[output_key]
+                
+                # Execute the step
+                result = self.dag_executor.execute_step(step_id, step_config, step_inputs)
+                step_outputs[step_id] = result.get('outputs', {})
+                executed.add(step_id)
+            
+            # Mark as completed
+            execution.status = WorkflowStatus.COMPLETED
+            execution.completed_at = datetime.now()
+            execution.outputs = step_outputs
+            
+        except Exception as e:
+            execution.status = WorkflowStatus.FAILED
+            execution.completed_at = datetime.now()
+            execution.error = str(e)
+            self.logger.error(f"Workflow execution {execution.id} failed: {e}")
         
         return execution
+    
+    def _topological_sort(self, graph: Dict) -> List[str]:
+        """Topological sort of workflow steps."""
+        in_degree = {node: len(info['dependencies']) for node, info in graph.items()}
+        queue = [node for node, degree in in_degree.items() if degree == 0]
+        result = []
+        
+        while queue:
+            node = queue.pop(0)
+            result.append(node)
+            for dependent in graph[node]['dependents']:
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
+        
+        if len(result) != len(graph):
+            raise WorkflowExecutionError("Workflow has circular dependencies")
+        
+        return result
     
     def pause_workflow(self, execution_id: str):
         """

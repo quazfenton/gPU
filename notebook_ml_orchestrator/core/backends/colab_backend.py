@@ -38,6 +38,9 @@ SUPPORTED_TEMPLATES = [
     "object-detection",
     "image-segmentation",
     "video-processing",
+    "style-transfer",
+    "data-augmentation",
+    "ocr",
     # Language templates
     "named-entity-recognition",
     "sentiment-analysis",

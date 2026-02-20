@@ -166,15 +166,12 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             True if successful, False otherwise
         """
         try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
+            with self.db.get_cursor() as cursor:
                 cursor.execute(
-                    "UPDATE jobs SET backend_id = ?, updated_at = ? WHERE id = ?",
-                    (backend_id, datetime.now().isoformat(), job_id)
+                    "UPDATE jobs SET backend_id = ? WHERE id = ?",
+                    (backend_id, job_id)
                 )
-                conn.commit()
                 
-                # Update cache if present (if cache attribute exists)
                 with self._lock:
                     if hasattr(self, '_job_cache') and job_id in self._job_cache:
                         self._job_cache[job_id].backend_id = backend_id

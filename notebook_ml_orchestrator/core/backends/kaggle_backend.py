@@ -33,10 +33,13 @@ SUPPORTED_TEMPLATES = [
     # Audio templates
     "speech-recognition",
     "music-processing",
+    "audio-classification",
     # Vision templates
     "object-detection",
     "image-segmentation",
     "video-processing",
+    "data-augmentation",
+    "ocr",
     # Language templates
     "named-entity-recognition",
     "sentiment-analysis",
@@ -45,6 +48,7 @@ SUPPORTED_TEMPLATES = [
     # Multimodal templates
     "image-captioning",
     "visual-question-answering",
+    "document-qa",
 ]
 
 

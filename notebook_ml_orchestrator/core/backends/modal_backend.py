@@ -41,19 +41,31 @@ SUPPORTED_TEMPLATES = [
     "speech-recognition",
     "audio-generation",
     "music-processing",
+    "audio-classification",
+    "text-to-speech",
     # Vision templates
     "object-detection",
     "image-segmentation",
     "video-processing",
+    "style-transfer",
+    "face-detection",
+    "data-augmentation",
+    "image-upscaling",
+    "ocr",
     # Language templates
     "named-entity-recognition",
     "sentiment-analysis",
     "translation",
     "summarization",
+    "code-generation",
+    "text-embedding",
+    "zero-shot-classification",
+    "text-similarity",
     # Multimodal templates
     "image-captioning",
     "visual-question-answering",
     "text-to-image",
+    "document-qa",
 ]
 
 

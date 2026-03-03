@@ -493,27 +493,37 @@ class AuthManager:
                 metadata=payload_dict.get('metadata', {})
             )
             
-        except ImportError:
-            # Fallback to base64 decoding
-            try:
-                decoded = base64.b64decode(token)
-                payload_json = decoded[:-64]  # Remove signature
-                signature = decoded[-64:]
-                
-                # Verify signature
-                expected_signature = hmac.new(
-                    self._secret_key,
-                    payload_json,
-                    hashlib.sha256
-                ).digest()
-                
-                if not hmac.compare_digest(signature, expected_signature):
-                    raise TokenValidationError("Invalid token signature")
-                
-                payload_dict = json.loads(payload_json)
-                
-                return TokenPayload(
-                    user_id=payload_dict['user_id'],
+        # Fallback to base64 decoding
+        try:
+            decoded = base64.b64decode(token)
+            sig_len = hashlib.sha256().digest_size
+            payload_json = decoded[:-sig_len]  # Remove signature
+            signature = decoded[-sig_len:]
+    
+            # Verify signature
+            expected_signature = hmac.new(
+                self._secret_key,
+                payload_json,
+                hashlib.sha256
+            ).digest()
+    
+            if not hmac.compare_digest(signature, expected_signature):
+                raise TokenValidationError("Invalid token signature")
+    
+            payload_dict = json.loads(payload_json)
+    
+            return TokenPayload(
+                user_id=payload_dict['user_id'],
+                username=payload_dict['username'],
+                role=payload_dict['role'],
+                issued_at=datetime.fromtimestamp(payload_dict['iat']),
+                expires_at=datetime.fromtimestamp(payload_dict['exp']),
+                token_type=payload_dict['token_type'],
+                jti=payload_dict['jti'],
+            )
+    
+        except Exception as e:
+            raise TokenValidationError(f"Invalid token: {str(e)}")
                     username=payload_dict['username'],
                     role=payload_dict['role'],
                     issued_at=datetime.fromtimestamp(payload_dict['iat']),
@@ -651,12 +661,18 @@ class AuthManager:
                 logger.warning(f"Authentication failed: incorrect password for '{username}'")
                 raise AuthenticationError("Invalid username or password", "INVALID_CREDENTIALS")
             
-            # Check 2FA if enabled
-            if self.enable_2fa and totp_code:
-                if not self._verify_totp(username, totp_code):
-                    self._record_failed_attempt(username, ip_address, user_agent, 'invalid_totp')
-                    self._audit_log('auth.failed', username, {'reason': 'invalid_totp', 'ip': ip_address})
-                    raise AuthenticationError("Invalid 2FA code", "INVALID_TOTP")
+            # Enforce 2FA if enabled for this user
+            if self.enable_2fa:
+                config = self._2fa_configs.get(username)
+                if config and config.enabled:
+                    if not totp_code:
+                        self._record_failed_attempt(username, ip_address, user_agent, 'totp_required')
+                        self._audit_log('auth.failed', username, {'reason': 'totp_required', 'ip': ip_address})
+                        raise AuthenticationError("2FA code required", "TOTP_REQUIRED")
+                    if not self._verify_totp(username, totp_code):
+                        self._record_failed_attempt(username, ip_address, user_agent, 'invalid_totp')
+                        self._audit_log('auth.failed', username, {'reason': 'invalid_totp', 'ip': ip_address})
+                        raise AuthenticationError("Invalid 2FA code", "INVALID_TOTP")
             
             # Clear failed attempts on successful login
             self._failed_attempts[username].clear()

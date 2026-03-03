@@ -106,11 +106,17 @@ class SecurityMiddleware:
         """
         ctx = SecurityContext()
         
-        # Extract IP address
+        # Extract IP address and user agent
         if request:
-            ctx.ip_address = getattr(request, 'client', {}).get('host') if hasattr(request, 'client') else None
-            ctx.user_agent = request.headers.get('user-agent') if hasattr(request, 'headers') else None
-        
+            client = getattr(request, 'client', None)
+            if isinstance(client, dict):
+                ctx.ip_address = client.get('host')
+            else:
+                ctx.ip_address = getattr(client, 'host', None)
+
+            headers = getattr(request, 'headers', None)
+            if hasattr(headers, 'get'):
+                ctx.user_agent = headers.get('user-agent')
         # Try token authentication
         if token:
             try:

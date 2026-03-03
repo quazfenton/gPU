@@ -186,20 +186,84 @@ class ContentSanitizer:
     ) -> SanitizationResult:
         """
         Sanitize HTML content by removing dangerous elements.
-        
+    
         Args:
             content: HTML content to sanitize
-            allowed_tags: Override allowed tags set
-            
+            allowed_tags: Override allowed tags set (may be a set of tag names
+                          or a string key like 'basic' referring to ALLOWED_TAGS)
+        
         Returns:
             SanitizationResult with sanitized content and metadata
         """
         if not isinstance(content, str):
             content = str(content)
-        
+    
         with self._lock:
-            tags = allowed_tags or self.allowed_tags
+            # Normalize allowed_tags so both set-of-tags and named profiles work
+            if isinstance(allowed_tags, str):
+                tags = ALLOWED_TAGS.get(allowed_tags, self.allowed_tags)
+            elif allowed_tags is not None:
+                tags = allowed_tags
+            else:
+                tags = self.allowed_tags
+        
             removed_elements = []
+            removed_attributes = []
+            warnings = []
+        
+            # Check for dangerous patterns
+            for pattern, name in self._dangerous_patterns:
+                matches = pattern.findall(content)
+                if matches:
+                    warnings.append(f"Detected {name}: {len(matches)} occurrences")
+                    content = pattern.sub('', content)
+                    removed_elements.append(name)
+        
+            # Remove HTML comments
+            if self.remove_comments:
+                comment_pattern = re.compile(r'<!--.*?-->', re.DOTALL)
+                if comment_pattern.search(content):
+                    warnings.append("Removed HTML comments")
+                content = comment_pattern.sub('', content)
+        
+            # Remove style attributes if configured
+            if self.remove_styles:
+                style_pattern = re.compile(r'\s*style\s*=\s*["\'][^"\']*["\']', re.IGNORECASE)
+                if style_pattern.search(content):
+                    warnings.append("Removed style attributes")
+                content = style_pattern.sub('', content)
+        
+            # Remove disallowed tags
+            tag_pattern = re.compile(r'<\s*(/\s*)?(\w+)([^>]*)>', re.IGNORECASE)
+        
+            def replace_tag(match):
+                closing = match.group(1) or ''
+                tag_name = match.group(2).lower()
+                attributes = match.group(3)
+            
+                if tag_name not in tags:
+                    removed_elements.append(f"<{tag_name}>")
+                    return ''  # Remove tag but keep content
+            
+                # Sanitize attributes
+                if attributes:
+                    sanitized_attrs = self._sanitize_attributes(tag_name, attributes)
+                    removed_attributes.extend(sanitized_attrs['removed'])
+                    attributes = sanitized_attrs['attributes']
+            
+                return f'<{closing}{tag_name}{attributes}>'
+        
+            content = tag_pattern.sub(replace_tag, content)
+        
+            is_safe = len(removed_elements) == 0 and len(warnings) == 0
+        
+            return SanitizationResult(
+                content=content,
+                is_safe=is_safe,
+                removed_elements=removed_elements,
+                removed_attributes=removed_attributes,
+                warnings=warnings
+            )
             removed_attributes = []
             warnings = []
             

@@ -337,13 +337,15 @@ class CredentialStore:
             except Exception as e:
                 logger.warning(f"Failed to load master key from Azure: {e}")
         
-        # No secure key source found - generate from weak source (warning logged)
-        logger.warning(
-            "No secure master key found. Using fallback key derivation. "
-            "This is NOT secure for production use. Set MASTER_KEY environment variable."
+        # No secure key source found - fail fast instead of using a predictable key
+        logger.error(
+            "No secure master key found for CredentialStore. "
+            "Set MASTER_KEY or configure a supported secrets backend."
         )
-        # Use a default key for development (NOT SECURE FOR PRODUCTION)
-        return hashlib.sha256(b'default-dev-key-do-not-use-in-production').digest()
+        raise CredentialEncryptionError(
+            "MASTER_KEY not configured and no secure backend available; cannot initialize CredentialStore",
+            is_recoverable=False
+        )
     
     def _normalize_key(self, key: str) -> bytes:
         """Normalize key to correct size using SHA-256."""

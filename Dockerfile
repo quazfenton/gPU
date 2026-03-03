@@ -160,8 +160,7 @@ ENV DEBUG=true \
 # Expose debug port
 EXPOSE 5678
 
-# Override entrypoint for development
-ENTRYPOINT []
+# Use the same entrypoint as production so initialization still runs; only override the default command
 CMD ["python", "-m", "gui.main", "--debug", "--host", "0.0.0.0", "--port", "7860"]
 
 # =============================================================================

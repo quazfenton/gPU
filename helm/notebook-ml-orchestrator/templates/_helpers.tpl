@@ -46,7 +46,7 @@ Selector labels
 {{- define "notebook-ml-orchestrator.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "notebook-ml-orchestrator.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
-{{- end }}
+app: {{ include "notebook-ml-orchestrator.name" . }}
 
 {{/*
 Create the name of the service account to use

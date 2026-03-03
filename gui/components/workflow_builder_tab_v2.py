@@ -243,21 +243,29 @@ class WorkflowBuilderTabV2(LoggerMixin):
                 inputs=[workflow_name, workflow_state],
                 outputs=[execution_status, execution_results]
             )
-            
-            # Export workflow
-            export_workflow_btn.click(
-                fn=self._export_workflow,
-                inputs=[workflow_name, workflow_state],
-                outputs=[workflow_file]
-            )
-            
-            # Import workflow
-            import_workflow_btn.click(
-                fn=self._import_workflow,
-                inputs=[workflow_file],
-                outputs=[workflow_name, workflow_state, steps_list, dag_visualization, workflow_json]
-            )
-            
+            ...
+            def _execute_workflow(self, workflow_name: str, workflow_state: Dict) -> Tuple[str, Dict]:
+                """Execute the workflow."""
+                try:
+                    # Build full workflow JSON expected by WorkflowService
+                    workflow_data = {
+                        "name": workflow_name or "Untitled Workflow",
+                        "steps": workflow_state.get("steps", []),
+                        "connections": workflow_state.get("connections", []),
+                        "conditions": workflow_state.get("conditions", []),
+                        "metadata": workflow_state.get("metadata", {}),
+                    }
+
+                    # Call workflow service to execute
+                    workflow_id = self.workflow_service.execute_workflow(json.dumps(workflow_data))
+
+                    return f"▶️ Workflow executing (ID: {workflow_id})", {
+                        "workflow_id": workflow_id,
+                        "status": "running",
+                        "message": "Workflow execution started",
+                    }
+                except Exception as e:
+                    return f"❌ Execution failed: {str(e)}", {"error": str(e)}
             # Workflow JSON changes (sync with state)
             workflow_json.change(
                 fn=self._sync_json_to_state,

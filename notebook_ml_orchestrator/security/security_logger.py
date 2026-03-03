@@ -714,7 +714,7 @@ class SecurityLogger:
         archive_path: Optional[str] = None
     ) -> None:
         """
-        Set log retention policy.
+                    'total_events': sum(event['count'] for event in exported_events),
 
         Args:
             max_age_days: Maximum age of events to keep

@@ -73,9 +73,9 @@ class SoundGeneratorTemplate(Template):
     ]
 
     outputs = [
-        OutputField(name="audio", type="audio", description="Generated audio file")),
-        OutputField(name="duration_sec", type="number", description="Audio duration")),
-        OutputField(name="sample_rate", type="number", description="Audio sample rate")),
+        OutputField(name="audio", type="audio", description="Generated audio file"),
+        OutputField(name="duration_sec", type="number", description="Audio duration"),
+        OutputField(name="sample_rate", type="number", description="Audio sample rate"),
     ]
 
     routing = [RouteType.MODAL, RouteType.COLAB]

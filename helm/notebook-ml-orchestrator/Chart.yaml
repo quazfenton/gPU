@@ -1,0 +1,19 @@
+apiVersion: v2
+name: notebook-ml-orchestrator
+description: A Helm chart for Notebook ML Orchestrator
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ml
+  - orchestration
+  - kubernetes
+  - modal
+  - kaggle
+  - huggingface
+home: https://github.com/notebook-ml-orchestrator/notebook-ml-orchestrator
+sources:
+  - https://github.com/notebook-ml-orchestrator/notebook-ml-orchestrator
+maintainers:
+  - name: Notebook ML Orchestrator Team
+    email: team@notebook-ml-orchestrator.com

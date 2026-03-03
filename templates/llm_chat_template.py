@@ -101,10 +101,10 @@ class LLMChatTemplate(Template):
     ]
 
     outputs = [
-        OutputField(name="response", type="text", description="Model response")),
-        OutputField(name="usage", type="json", description="Token usage statistics")),
-        OutputField(name="model_used", type="text", description="Model that generated response")),
-        OutputField(name="finish_reason", type="text", description="Why generation stopped")),
+        OutputField(name="response", type="text", description="Model response"),
+        OutputField(name="usage", type="json", description="Token usage statistics"),
+        OutputField(name="model_used", type="text", description="Model that generated response"),
+        OutputField(name="finish_reason", type="text", description="Why generation stopped"),
     ]
 
     routing = [RouteType.LOCAL, RouteType.MODAL]

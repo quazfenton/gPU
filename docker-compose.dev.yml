@@ -1,0 +1,89 @@
+# =============================================================================
+# Notebook ML Orchestrator - Development Docker Compose Override
+# =============================================================================
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# =============================================================================
+
+version: '3.8'
+
+services:
+  orchestrator:
+    build:
+      target: development
+    
+    # Enable debug mode
+    environment:
+      - DEBUG=true
+      - VERBOSE_LOGGING=true
+      - HOT_RELOAD=true
+      - APP_ENV=development
+    
+    # Additional ports for debugging
+    ports:
+      - "${DEBUG_PORT:-5678}:5678"  # For Python debugger
+    
+    # Mount source code for hot reload
+    volumes:
+      - ./notebook_ml_orchestrator:/app/notebook_ml_orchestrator
+      - ./gui:/app/gui
+      - ./templates:/app/templates
+      - ./tests:/app/tests
+      - ./.env:/app/.env
+      - ./pytest.ini:/app/pytest.ini
+    
+    # Disable health check for development
+    healthcheck:
+      disable: true
+    
+    # Increase resource limits for development
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+    
+    # Keep container running for debugging
+    stdin_open: true
+    tty: true
+
+  # Development Redis with UI
+  redis:
+    ports:
+      - "6379:6379"
+  
+  # Optional: Add pgAdmin for database development
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   container_name: orchestrator-pgadmin
+  #   environment:
+  #     - PGADMIN_DEFAULT_EMAIL=admin@example.com
+  #     - PGADMIN_DEFAULT_PASSWORD=admin
+  #   ports:
+  #     - "5050:80"
+  #   depends_on:
+  #     - postgres
+  #   networks:
+  #     - orchestrator-network
+
+# =============================================================================
+# Usage:
+# =============================================================================
+# Start development environment:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Access application:
+#   http://localhost:7860
+#
+# Debug with pdb:
+#   docker-compose exec orchestrator python -m pdb -m gui.main
+#
+# Run tests:
+#   docker-compose exec orchestrator pytest
+#
+# Run tests with coverage:
+#   docker-compose exec orchestrator pytest --cov=notebook_ml_orchestrator --cov-report=html
+#
+# Access Redis:
+#   docker-compose exec redis redis-cli
+#
+# =============================================================================

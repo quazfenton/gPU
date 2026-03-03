@@ -22,6 +22,7 @@ from gui.services.backend_monitor_service import BackendMonitorService
 from gui.components.job_submission_tab_v2 import JobSubmissionTabV2
 from gui.components.job_monitoring_tab_v2 import JobMonitoringTabV2
 from gui.components.workflow_builder_tab import WorkflowBuilderTab
+from gui.components.workflow_builder_tab_v2 import WorkflowBuilderTabV2
 from gui.components.template_management_tab_v2 import TemplateManagementTabV2
 from gui.components.backend_status_tab import BackendStatusTab
 from gui.components.backend_registration_tab import BackendRegistrationTab

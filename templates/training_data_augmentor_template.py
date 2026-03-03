@@ -89,9 +89,9 @@ class TrainingDataAugmentorTemplate(Template):
     ]
 
     outputs = [
-        OutputField(name="augmented_data", type="json", description="Augmented dataset")),
-        OutputField(name="num_samples", type="number", description="Total samples after augmentation")),
-        OutputField(name="augmentation_stats", type="json", description="Statistics about augmentation")),
+        OutputField(name="augmented_data", type="json", description="Augmented dataset"),
+        OutputField(name="num_samples", type="number", description="Total samples after augmentation"),
+        OutputField(name="augmentation_stats", type="json", description="Statistics about augmentation"),
     ]
 
     routing = [RouteType.LOCAL, RouteType.MODAL]

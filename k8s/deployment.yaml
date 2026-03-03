@@ -1,0 +1,487 @@
+# =============================================================================
+# Notebook ML Orchestrator - Kubernetes Deployment Manifest
+# =============================================================================
+# For production deployment on Kubernetes clusters
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notebook-ml-orchestrator
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+    version: v1.0.0
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: notebook-ml-orchestrator
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: notebook-ml-orchestrator
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Security context for pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      
+      # Service account
+      serviceAccountName: orchestrator-sa
+      
+      # Image pull secrets (for private registries)
+      # imagePullSecrets:
+      #   - name: registry-secret
+      
+      # Init containers
+      initContainers:
+        # Initialize database
+        - name: init-db
+          image: notebook-ml-orchestrator:v1.0.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              python -c "
+              from notebook_ml_orchestrator.core.database import DatabaseManager
+              import os
+              db_path = os.environ.get('ORCHESTRATOR_DB_PATH', '/app/data/orchestrator.db')
+              db = DatabaseManager(db_path)
+              db.initialize()
+              print('Database initialized')
+              "
+          env:
+            - name: ORCHESTRATOR_DB_PATH
+              value: /app/data/orchestrator.db
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+      
+      # Main containers
+      containers:
+        # Main application
+        - name: orchestrator
+          image: notebook-ml-orchestrator:v1.0.0
+          imagePullPolicy: IfNotPresent
+          
+          # Ports
+          ports:
+            - name: http
+              containerPort: 7860
+              protocol: TCP
+            - name: websocket
+              containerPort: 7861
+              protocol: TCP
+          
+          # Environment variables
+          env:
+            # Application
+            - name: APP_NAME
+              value: "Notebook ML Orchestrator"
+            - name: APP_ENV
+              value: "production"
+            - name: DEBUG
+              value: "false"
+            
+            # Security (from secrets)
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: master-key
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: jwt-secret
+            - name: CREDENTIAL_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: credential-salt
+            
+            # GUI Configuration
+            - name: GUI_HOST
+              value: "0.0.0.0"
+            - name: GUI_PORT
+              value: "7860"
+            - name: GUI_WEBSOCKET_PORT
+              value: "7861"
+            - name: GUI_ENABLE_AUTH
+              value: "true"
+            - name: GUI_ENABLE_RATE_LIMITING
+              value: "true"
+            
+            # Database
+            - name: ORCHESTRATOR_DB_PATH
+              value: /app/data/orchestrator.db
+            
+            # Logging
+            - name: ORCHESTRATOR_LOG_LEVEL
+              value: "INFO"
+            - name: ORCHESTRATOR_LOG_FILE
+              value: /app/logs/orchestrator.log
+            
+            # Security logging
+            - name: SECURITY_LOG_FILE
+              value: /app/logs/security.log
+          
+          # Volume mounts
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+            - name: log-volume
+              mountPath: /app/logs
+            - name: upload-volume
+              mountPath: /app/uploads
+          
+          # Health checks
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          # Resource limits
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+          
+          # Security context
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+        
+        # Sidecar: Log collector (optional)
+        - name: log-collector
+          image: fluent/fluent-bit:latest
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: log-volume
+              mountPath: /var/log/app
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      
+      # Volumes
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: orchestrator-data-pvc
+        - name: log-volume
+          emptyDir: {}
+        - name: upload-volume
+          persistentVolumeClaim:
+            claimName: orchestrator-upload-pvc
+      
+      # Node selector (optional)
+      # nodeSelector:
+      #   node-type: application
+      
+      # Tolerations (optional)
+      # tolerations:
+      #   - key: "dedicated"
+      #     operator: "Equal"
+      #     value: "orchestrator"
+      #     effect: "NoSchedule"
+      
+      # Affinity (optional)
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: notebook-ml-orchestrator
+                topologyKey: kubernetes.io/hostname
+
+---
+# =============================================================================
+# Service
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: notebook-ml-orchestrator
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+spec:
+  type: LoadBalancer
+  selector:
+    app: notebook-ml-orchestrator
+  ports:
+    - name: http
+      port: 80
+      targetPort: 7860
+      protocol: TCP
+    - name: websocket
+      port: 7861
+      targetPort: 7861
+      protocol: TCP
+  
+  # Session affinity
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+
+---
+# =============================================================================
+# PersistentVolumeClaims
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orchestrator-data-pvc
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: standard
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orchestrator-upload-pvc
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  # storageClassName: standard
+
+---
+# =============================================================================
+# Secrets (Template - create actual secrets with kubectl)
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: orchestrator-secrets
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+type: Opaque
+stringData:
+  # IMPORTANT: Replace these with actual secure values!
+  # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+  master-key: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
+  jwt-secret: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
+  credential-salt: "CHANGE-ME-64-HEX-CHARACTERS-SECURE-RANDOM"
+
+---
+# =============================================================================
+# ConfigMap
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+data:
+  # Application configuration
+  APP_NAME: "Notebook ML Orchestrator"
+  APP_ENV: "production"
+  
+  # GUI configuration
+  GUI_THEME: "default"
+  GUI_PAGE_SIZE: "50"
+  GUI_AUTO_REFRESH_INTERVAL: "5"
+  
+  # Rate limiting
+  GUI_RATE_LIMIT_PER_MINUTE: "60"
+  GUI_RATE_LIMIT_PER_HOUR: "1000"
+  
+  # Logging
+  LOG_LEVEL: "INFO"
+  
+  # Health check
+  HEALTH_CHECK_INTERVAL: "300"
+  
+  # Backend routing
+  ROUTING_STRATEGY: "cost-optimized"
+  PREFER_FREE_TIER: "true"
+
+---
+# =============================================================================
+# HorizontalPodAutoscaler
+# =============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orchestrator-hpa
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notebook-ml-orchestrator
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Max
+
+---
+# =============================================================================
+# NetworkPolicy
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orchestrator-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: notebook-ml-orchestrator
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 7860
+        - protocol: TCP
+          port: 7861
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow HTTPS outbound (for API calls)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+# =============================================================================
+# Deployment Instructions:
+# =============================================================================
+# 
+# 1. Create namespace (optional):
+#    kubectl create namespace orchestrator
+#
+# 2. Create secrets (IMPORTANT - replace with actual values!):
+#    kubectl create secret generic orchestrator-secrets \
+#      --from-literal=master-key=$(python -c "import secrets; print(secrets.token_hex(32))") \
+#      --from-literal=jwt-secret=$(python -c "import secrets; print(secrets.token_hex(32))") \
+#      --from-literal=credential-salt=$(python -c "import secrets; print(secrets.token_hex(32))") \
+#      -n default
+#
+# 3. Apply manifests:
+#    kubectl apply -f k8s/deployment.yaml
+#
+# 4. Check deployment:
+#    kubectl get pods -l app=notebook-ml-orchestrator
+#    kubectl get svc notebook-ml-orchestrator
+#
+# 5. View logs:
+#    kubectl logs -l app=notebook-ml-orchestrator -f
+#
+# 6. Scale manually:
+#    kubectl scale deployment notebook-ml-orchestrator --replicas=5
+#
+# 7. Access application:
+#    kubectl get svc notebook-ml-orchestrator
+#    # Use the EXTERNAL-IP from the output
+#
+# 8. Uninstall:
+#    kubectl delete -f k8s/deployment.yaml
+#
+# =============================================================================

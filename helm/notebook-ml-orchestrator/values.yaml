@@ -1,0 +1,331 @@
+# =============================================================================
+# Notebook ML Orchestrator - Helm Chart Values
+# =============================================================================
+
+# Replica count
+replicaCount: 3
+
+# Image configuration
+image:
+  repository: notebook-ml-orchestrator
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+# Image pull secrets (for private registries)
+imagePullSecrets: []
+# - name: registry-secret
+
+# Name overrides
+nameOverride: ""
+fullnameOverride: ""
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Service configuration
+service:
+  type: LoadBalancer
+  port: 80
+  websocketPort: 7861
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations: {}
+  hosts:
+    - host: orchestrator.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: orchestrator-tls
+  #   hosts:
+  #     - orchestrator.example.com
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+  requests:
+    cpu: 500m
+    memory: 1Gi
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app: notebook-ml-orchestrator
+          topologyKey: kubernetes.io/hostname
+
+# =============================================================================
+# Application Configuration
+# =============================================================================
+
+config:
+  # Application settings
+  appName: "Notebook ML Orchestrator"
+  appEnv: "production"
+  debug: false
+  
+  # GUI settings
+  gui:
+    host: "0.0.0.0"
+    port: 7860
+    websocketPort: 7861
+    theme: "default"
+    enableAuth: true
+    enableRateLimiting: true
+    rateLimitPerMinute: 60
+    rateLimitPerHour: 1000
+    pageSize: 50
+    autoRefreshInterval: 5
+  
+  # Logging
+  logging:
+    level: "INFO"
+    file: "/app/logs/orchestrator.log"
+  
+  # Security logging
+  securityLogging:
+    file: "/app/logs/security.log"
+    level: "INFO"
+  
+  # Backend routing
+  routing:
+    strategy: "cost-optimized"
+    preferFreeTier: true
+    healthCheckInterval: 300
+    maxRetries: 3
+  
+  # Workflow
+  workflow:
+    maxSteps: 50
+    timeout: 3600
+    maxConcurrent: 10
+  
+  # Batch processing
+  batch:
+    maxItems: 1000
+    maxParallel: 10
+    timeout: 7200
+
+# =============================================================================
+# Security Configuration
+# =============================================================================
+
+security:
+  # IMPORTANT: These should be set via secrets, not here!
+  # masterKey: ""  # Set via secrets
+  # jwtSecret: ""  # Set via secrets
+  # credentialSalt: ""  # Set via secrets
+  
+  # Feature toggles
+  enable2fa: false
+  sessionTimeout: 3600
+  
+  # Password policy
+  passwordPolicy:
+    minLength: 8
+    requireUppercase: true
+    requireLowercase: true
+    requireDigit: true
+    requireSpecial: false
+  
+  # Brute force protection
+  bruteForceProtection:
+    maxFailedAttempts: 5
+    lockoutDurationMinutes: 30
+
+# =============================================================================
+# Storage Configuration
+# =============================================================================
+
+persistence:
+  data:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  
+  uploads:
+    enabled: true
+    size: 50Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  
+  logs:
+    # Logs use emptyDir by default (ephemeral)
+    # Set enabled to true and configure storageClass for persistent logs
+    enabled: false
+    size: 5Gi
+    storageClass: ""
+
+# =============================================================================
+# Backend Credentials (set via secrets)
+# =============================================================================
+
+backendCredentials:
+  # Modal
+  modal:
+    enabled: false
+    # tokenId: ""  # Set via secrets
+    # tokenSecret: ""  # Set via secrets
+  
+  # HuggingFace
+  huggingface:
+    enabled: false
+    # token: ""  # Set via secrets
+  
+  # Kaggle
+  kaggle:
+    enabled: false
+    # username: ""  # Set via secrets
+    # key: ""  # Set via secrets
+  
+  # Google Colab
+  colab:
+    enabled: false
+    # clientId: ""  # Set via secrets
+    # clientSecret: ""  # Set via secrets
+    # refreshToken: ""  # Set via secrets
+
+# =============================================================================
+# Monitoring Configuration
+# =============================================================================
+
+monitoring:
+  # Prometheus metrics
+  prometheus:
+    enabled: true
+    port: 8080
+    path: /metrics
+  
+  # Health check
+  healthCheck:
+    enabled: true
+    port: 8080
+    path: /health
+    intervalSeconds: 30
+    timeoutSeconds: 10
+  
+  # Log collector sidecar
+  logCollector:
+    enabled: true
+    image: fluent/fluent-bit:latest
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# =============================================================================
+# Network Policy
+# =============================================================================
+
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 7860
+        - protocol: TCP
+          port: 7861
+  egress:
+    # Allow DNS
+    - ports:
+        - protocol: UDP
+          port: 53
+    # Allow HTTPS outbound
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+
+# =============================================================================
+# Additional Volumes (optional)
+# =============================================================================
+
+extraVolumes: []
+# - name: custom-config
+#   configMap:
+#     name: custom-config
+
+extraVolumeMounts: []
+# - name: custom-config
+#   mountPath: /app/config
+
+# =============================================================================
+# Sidecar Containers (optional)
+# =============================================================================
+
+extraContainers: []
+# - name: datadog-agent
+#   image: datadog/agent:latest
+#   env:
+#     - name: DD_API_KEY
+#       valueFrom:
+#         secretKeyRef:
+#           name: datadog-secret
+#           key: api-key
+
+# =============================================================================
+# Init Containers (optional)
+# =============================================================================
+
+initContainers: []
+# - name: init-db
+#   image: notebook-ml-orchestrator:v1.0.0
+#   command: ['sh', '-c', 'python -c "from notebook_ml_orchestrator.core.database import DatabaseManager; db = DatabaseManager(); db.initialize()"']

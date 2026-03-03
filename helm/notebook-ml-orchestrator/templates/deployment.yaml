@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "notebook-ml-orchestrator.fullname" . }}
+  labels:
+    {{- include "notebook-ml-orchestrator.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "notebook-ml-orchestrator.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        {{- if .Values.monitoring.prometheus.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.monitoring.prometheus.port }}"
+        prometheus.io/path: "{{ .Values.monitoring.prometheus.path }}"
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "notebook-ml-orchestrator.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "notebook-ml-orchestrator.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: init-db
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              python -c "
+              from notebook_ml_orchestrator.core.database import DatabaseManager
+              import os
+              db_path = os.environ.get('ORCHESTRATOR_DB_PATH', '/app/data/orchestrator.db')
+              db = DatabaseManager(db_path)
+              db.initialize()
+              print('Database initialized')
+              "
+          env:
+            - name: ORCHESTRATOR_DB_PATH
+              value: /app/data/orchestrator.db
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+          securityContext:
+            allowPrivilegeEscalation: false
+      {{- with .Values.initContainers }}
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.gui.port }}
+              protocol: TCP
+            - name: websocket
+              containerPort: {{ .Values.config.gui.websocketPort }}
+              protocol: TCP
+          {{- if .Values.monitoring.healthCheck.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.monitoring.healthCheck.path }}
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: {{ .Values.monitoring.healthCheck.intervalSeconds }}
+            timeoutSeconds: {{ .Values.monitoring.healthCheck.timeoutSeconds }}
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.monitoring.healthCheck.path }}
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: APP_NAME
+              value: {{ .Values.config.appName | quote }}
+            - name: APP_ENV
+              value: {{ .Values.config.appEnv | quote }}
+            - name: DEBUG
+              value: {{ .Values.config.debug | quote }}
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "notebook-ml-orchestrator.fullname" . }}-secrets
+                  key: master-key
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "notebook-ml-orchestrator.fullname" . }}-secrets
+                  key: jwt-secret
+            - name: CREDENTIAL_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "notebook-ml-orchestrator.fullname" . }}-secrets
+                  key: credential-salt
+            - name: GUI_HOST
+              value: {{ .Values.config.gui.host | quote }}
+            - name: GUI_PORT
+              value: {{ .Values.config.gui.port | quote }}
+            - name: GUI_WEBSOCKET_PORT
+              value: {{ .Values.config.gui.websocketPort | quote }}
+            - name: GUI_ENABLE_AUTH
+              value: {{ .Values.config.gui.enableAuth | quote }}
+            - name: GUI_ENABLE_RATE_LIMITING
+              value: {{ .Values.config.gui.enableRateLimiting | quote }}
+            - name: GUI_RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.config.gui.rateLimitPerMinute | quote }}
+            - name: GUI_RATE_LIMIT_PER_HOUR
+              value: {{ .Values.config.gui.rateLimitPerHour | quote }}
+            - name: ORCHESTRATOR_LOG_LEVEL
+              value: {{ .Values.config.logging.level | quote }}
+            - name: ORCHESTRATOR_LOG_FILE
+              value: {{ .Values.config.logging.file | quote }}
+            - name: SECURITY_LOG_FILE
+              value: {{ .Values.config.securityLogging.file | quote }}
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+            - name: log-volume
+              mountPath: /app/logs
+            - name: upload-volume
+              mountPath: /app/uploads
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- if .Values.monitoring.logCollector.enabled }}
+        - name: log-collector
+          image: {{ .Values.monitoring.logCollector.image }}
+          resources:
+            {{- toYaml .Values.monitoring.logCollector.resources | nindent 12 }}
+          volumeMounts:
+            - name: log-volume
+              mountPath: /var/log/app
+        {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: data-volume
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "notebook-ml-orchestrator.fullname" . }}-data-pvc
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: log-volume
+          {{- if .Values.persistence.logs.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "notebook-ml-orchestrator.fullname" . }}-logs-pvc
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: upload-volume
+          {{- if .Values.persistence.uploads.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "notebook-ml-orchestrator.fullname" . }}-uploads-pvc
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

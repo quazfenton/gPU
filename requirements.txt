@@ -10,3 +10,14 @@ gradio>=4.0.0
 fastapi>=0.104.0
 websockets>=12.0
 hypothesis>=6.92.0
+
+# Security dependencies
+cryptography>=41.0.0
+PyJWT>=2.8.0
+bcrypt>=4.0.0
+
+# Optional: Secrets manager integrations
+# hvac>=1.0.0  # HashiCorp Vault
+# boto3>=1.28.0  # AWS Secrets Manager
+# azure-keyvault-secrets>=4.7.0  # Azure Key Vault
+# azure-identity>=1.14.0

@@ -109,17 +109,37 @@ class WorkflowBuilderTabV2(LoggerMixin):
                         validate_workflow_btn = gr.Button("✅ Validate", variant="secondary")
                         save_workflow_btn = gr.Button("💾 Save", variant="primary")
                         load_workflow_btn = gr.Button("📂 Load", variant="secondary")
+                        # Connect load_workflow_btn to an existing handler for loading workflows by name
+                        load_workflow_btn.click(
+                            fn=self._load_workflow,
+                            inputs=[workflow_name], # Assuming workflow_name is used to identify the workflow to load
+                            outputs=[workflow_name, dag_visualization, workflow_json, workflow_state, steps_list]
+                            # Note: dag_visualization, workflow_json, workflow_state, steps_list are assumed
+                            # to be defined elsewhere in the render method or class scope.
+                        )
                     
                     with gr.Row():
                         execute_workflow_btn = gr.Button("▶️ Execute", variant="primary")
                         export_workflow_btn = gr.Button("📤 Export", variant="secondary")
                         import_workflow_btn = gr.Button("📥 Import", variant="secondary")
+                        
+                        # Connect import_workflow_btn to toggle visibility of workflow_file
+                        import_workflow_btn.click(
+                            fn=lambda: gr.update(visible=True),
+                            outputs=[workflow_file]
+                        )
                     
                     # Workflow file for import/export
                     workflow_file = gr.File(
                         label="Workflow File",
                         file_types=[".json"],
-                        visible=False
+                        visible=False # Keep hidden initially, will be toggled by import_workflow_btn
+                    )
+                    # Wire workflow_file's change event to the import handler
+                    workflow_file.change(
+                        fn=self._import_workflow,
+                        inputs=[workflow_file],
+                        outputs=[workflow_name, dag_visualization, workflow_json, workflow_state, steps_list]
                     )
                 
                 # Right panel: Visual DAG editor and workflow JSON
@@ -473,7 +493,7 @@ class WorkflowBuilderTabV2(LoggerMixin):
                 return f"❌ Validation failed: {result[1]}", {"valid": False, "error": result[1]}
                 
         except Exception as e:
-            return f"❌ Validation error: {str(e)}", {"valid": False, "error": str(e)}
+                'created_at': datetime.now(timezone.utc).isoformat()
     
     def _save_workflow(self, workflow_name: str, workflow_state: Dict) -> Tuple[str, str]:
         """Save workflow to file."""

@@ -278,9 +278,11 @@ export MASTER_KEY='your-secure-master-key-at-least-32-bytes-long!'
 # JWT secret for token signing
 export JWT_SECRET='your-jwt-secret-at-least-32-bytes-long!'
 
-# Salt for key derivation (64 hex characters = 32 bytes)
-export CREDENTIAL_SALT='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-```
+# Salt for key derivation (generate a unique value per deployment)
+# Example: python - <<'PY'
+# import secrets; print(secrets.token_hex(32))
+# PY
+export CREDENTIAL_SALT='<GENERATED_64_HEX_CHAR_SALT>'
 
 ### 2. Initialize Security Components
 

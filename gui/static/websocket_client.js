@@ -282,6 +282,10 @@ class WebSocketClient {
      * @private
      */
     _scheduleReconnect() {
+        if (this.reconnectTimer) {
+            // Reconnect already scheduled, prevent multiple timers from running
+            return;
+        }
         if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
             console.error('[WebSocket] Max reconnection attempts reached');
             return;
@@ -291,6 +295,7 @@ class WebSocketClient {
         console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1})`);
         
         this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null; // Clear the timer ID now that it's firing
             this.reconnectAttempts++;
             this.connect();
         }, delay);
@@ -464,8 +469,8 @@ if (typeof window !== 'undefined') {
         if (gradioApp) {
             // Get WebSocket URL from Gradio config or use default
             const wsPort = 7861;
-            const wsUrl = `ws://${window.location.hostname}:${wsPort}`;
-            
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const wsUrl = `${wsProtocol}://${window.location.hostname}:${wsPort}`;
             const wsManager = new GradioWebSocketManager(wsUrl);
             wsManager.initialize();
             

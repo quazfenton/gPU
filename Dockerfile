@@ -32,8 +32,10 @@ COPY requirements.txt requirements-orchestrator.txt ./
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt -r requirements-orchestrator.txt
 
-# Install security dependencies
-RUN pip install cryptography PyJWT bcrypt requests pyotp
+# Copy source code
+COPY notebook_ml_orchestrator/ ./notebook_ml_orchestrator/
+COPY gui/ ./gui/
+COPY templates/ ./templates/
 
 # Copy source code
 COPY notebook_ml_orchestrator/ ./notebook_ml_orchestrator/

@@ -87,7 +87,6 @@ class GradioApp(LoggerMixin):
             self.logger.info("Initializing WebSocket server")
             self.websocket_server = WebSocketServer(self.event_emitter)
             self.websocket_server.setup_listeners()
-        
         # Initialize authentication if enabled
         self.auth_middleware = None
         if self.config.enable_auth:
@@ -449,19 +448,22 @@ class GradioApp(LoggerMixin):
         try:
             # Get recent jobs (last 100)
             # Note: This is a simplified implementation. In production, you'd want
+            # Get recent jobs (last 100)
+            # Note: This is a simplified implementation. In production, you'd want
             # to track specific jobs or use database triggers for efficiency.
             stats = self.job_queue.get_queue_statistics()
-            
-            # For now, we'll just emit a general update event
-            # A more sophisticated implementation would track individual job changes
-            self.event_emitter.emit('job.status_changed', {
-                'timestamp': time.time(),
-                'statistics': stats
-            })
-            
+
+            # Only emit event if statistics have changed
+            if stats != self._last_job_stats:
+                self.event_emitter.emit('job.status_changed', {
+                    'timestamp': time.time(),
+                    'statistics': stats
+                })
+                self._last_job_stats = stats
+
         except Exception as e:
             self.logger.error(f"Error checking job status changes: {e}")
-    
+
     def _check_backend_status_changes(self) -> None:
         """Check for backend health status changes and emit events."""
         try:

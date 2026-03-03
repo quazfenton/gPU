@@ -383,13 +383,18 @@ docker cp orchestrator:/tmp/backup.db ./backup.db
 
 ### Restore Database
 
-```bash
-# Stop application
-kubectl scale deployment notebook-ml-orchestrator --replicas=0
+# Scale to one maintenance pod (required for kubectl cp)
+kubectl scale deployment notebook-ml-orchestrator --replicas=1
+kubectl rollout status deployment/notebook-ml-orchestrator
 
-# Copy backup
-kubectl cp ./backup.db <pod-name>:/app/data/orchestrator.db
+# Get the name of the single running pod
+POD_NAME=$(kubectl get pods -l app=notebook-ml-orchestrator -o jsonpath='{.items[0].metadata.name}')
 
+# Copy backup into the running pod
+kubectl cp ./backup.db "${POD_NAME}":/app/data/orchestrator.db
+
+# Restart rollout to ensure fresh process state. The deployment will scale back up to its desired replica count (e.g., 3).
+kubectl rollout restart deployment/notebook-ml-orchestrator
 # Restart application
 kubectl scale deployment notebook-ml-orchestrator --replicas=3
 ```

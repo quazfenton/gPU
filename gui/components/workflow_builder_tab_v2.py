@@ -259,11 +259,11 @@ class WorkflowBuilderTabV2(LoggerMixin):
                     # Call workflow service to execute
                     workflow_id = self.workflow_service.execute_workflow(json.dumps(workflow_data))
 
-                    return f"▶️ Workflow executing (ID: {workflow_id})", {
-                        "workflow_id": workflow_id,
-                        "status": "running",
-                        "message": "Workflow execution started",
-                    }
+                    workflow_json.change(
+                        fn=self._sync_json_to_state,
+                        inputs=[workflow_json, workflow_state],
+                        outputs=[workflow_state, steps_list, dag_visualization]
+                    )
                 except Exception as e:
                     return f"❌ Execution failed: {str(e)}", {"error": str(e)}
             # Workflow JSON changes (sync with state)

@@ -123,11 +123,12 @@ import os
 db_path = os.environ.get('ORCHESTRATOR_DB_PATH', '/app/data/orchestrator.db')
 try:
     db = DatabaseManager(db_path)
+    db.initialize()
     print('Database initialized successfully')
 except Exception as e:
-    print(f'Database initialization: {e}')
+    print(f'Database initialization failed: {e}')
+    raise
 " || warn "Database initialization skipped"
-
 log "Database ready"
 
 # =============================================================================

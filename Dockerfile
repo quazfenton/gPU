@@ -66,7 +66,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # Security defaults
     GUI_HOST=0.0.0.0 \
     GUI_PORT=7860 \
-    GUI_ENABLE_AUTH=false \
+    GUI_ENABLE_AUTH=true \
     GUI_ENABLE_RATE_LIMITING=true \
     # Paths
     UPLOAD_DIR=/app/uploads \

@@ -32,9 +32,9 @@ services:
       - DEBUG=${DEBUG:-false}
       
       # Security (REQUIRED - change in production!)
-      - MASTER_KEY=${MASTER_KEY:-change-me-in-production-at-least-32-bytes}
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-at-least-32-bytes}
-      - CREDENTIAL_SALT=${CREDENTIAL_SALT:-change-me-in-production-64-hex-chars}
+      - MASTER_KEY=${MASTER_KEY:?MASTER_KEY must be set}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      - CREDENTIAL_SALT=${CREDENTIAL_SALT:?CREDENTIAL_SALT must be set}
       
       # GUI Configuration
       - GUI_HOST=0.0.0.0
@@ -68,10 +68,7 @@ services:
       - orchestrator-logs:/app/logs
       - orchestrator-uploads:/app/uploads
       
-      # For development: mount source code
-      - ./notebook_ml_orchestrator:/app/notebook_ml_orchestrator:ro
-      - ./gui:/app/gui:ro
-      - ./templates:/app/templates:ro
+      yaml
       
       # Environment file (optional)
       - ./.env:/app/.env:ro

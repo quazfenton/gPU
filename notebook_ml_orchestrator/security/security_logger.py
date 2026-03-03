@@ -593,19 +593,78 @@ class SecurityLogger:
     ) -> str:
         """
         Export security events for external analysis.
-
+        
         Args:
             start_time: Start time filter
             end_time: End time filter
             event_types: List of event types to include
             output_format: Output format ('json', 'csv', 'cef', 'leef')
-
+            
         Returns:
             Formatted event data
         """
-        # This would require storing events in memory or database
-        # For now, return a placeholder
-        return json.dumps({'status': 'export_not_implemented', 'note': 'Requires event storage'})
+        with self._lock:
+            # Collect events from hourly counts
+            exported_events = []
+            
+            for hour_key, events in self._hourly_counts.items():
+                try:
+                    hour_time = datetime.strptime(hour_key, '%Y-%m-%d-%H')
+                    
+                    # Apply time filters
+                    if start_time and hour_time < start_time:
+                        continue
+                    if end_time and hour_time > end_time:
+                        continue
+                    
+                    # Apply event type filter
+                    for event_type, count in events.items():
+                        if event_types and event_type not in event_types:
+                            continue
+                        
+                        exported_events.append({
+                            'timestamp': hour_key,
+                            'event_type': event_type,
+                            'count': count
+                        })
+                except ValueError:
+                    continue
+            
+            # Format output
+            if output_format == 'json':
+                return json.dumps({
+                    'exported_at': datetime.now().isoformat(),
+                    'total_events': len(exported_events),
+                    'events': exported_events
+                }, indent=2)
+            
+            elif output_format == 'csv':
+                import csv
+                import io
+                output = io.StringIO()
+                writer = csv.DictWriter(output, fieldnames=['timestamp', 'event_type', 'count'])
+                writer.writeheader()
+                writer.writerows(exported_events)
+                return output.getvalue()
+            
+            elif output_format == 'cef':
+                # Common Event Format for SIEM integration
+                lines = []
+                for event in exported_events:
+                    cef_line = f"CEF:0|NotebookML|Orchestrator|1.0|{event['event_type']}|Security Event|5|rt={event['timestamp']} cn1={event['count']}"
+                    lines.append(cef_line)
+                return '\n'.join(lines)
+            
+            elif output_format == 'leef':
+                # Log Event Extended Format for IBM QRadar
+                lines = []
+                for event in exported_events:
+                    leef_line = f"LEEF:2.0|NotebookML|Orchestrator|1.0|{event['event_type']}\tcount={event['count']}\ttime={event['timestamp']}"
+                    lines.append(leef_line)
+                return '\n'.join(lines)
+            
+            else:
+                return json.dumps({'error': f'Unsupported format: {output_format}'})
 
     def search_events(
         self,
@@ -615,17 +674,38 @@ class SecurityLogger:
     ) -> List[Dict[str, Any]]:
         """
         Search security events.
-
+        
         Args:
-            query: Search query
+            query: Search query (matches event types)
             limit: Maximum results
             event_types: Filter by event types
-
+            
         Returns:
             List of matching events
         """
-        # Placeholder - would require event storage
-        return []
+        with self._lock:
+            results = []
+            query_lower = query.lower()
+            
+            for hour_key, events in self._hourly_counts.items():
+                for event_type, count in events.items():
+                    # Apply filters
+                    if event_types and event_type not in event_types:
+                        continue
+                    
+                    if query and query_lower not in event_type.lower():
+                        continue
+                    
+                    results.append({
+                        'timestamp': hour_key,
+                        'event_type': event_type,
+                        'count': count
+                    })
+                    
+                    if len(results) >= limit:
+                        return results
+            
+            return results
 
     def set_retention_policy(
         self,

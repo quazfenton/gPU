@@ -162,7 +162,7 @@ class GradioApp(LoggerMixin):
             self.template_service
         )
         self.job_monitoring_tab = JobMonitoringTabV2(self.job_service)
-        self.workflow_builder_tab = WorkflowBuilderTab(self.workflow_service, self.template_service)
+        self.workflow_builder_tab = WorkflowBuilderTabV2(self.workflow_service, self.template_service)
         self.template_management_tab = TemplateManagementTabV2(self.template_service)
         self.backend_status_tab = BackendStatusTab(self.backend_monitor)
         self.backend_registration_tab = BackendRegistrationTab(self.backend_router, self.backend_monitor)
@@ -255,12 +255,17 @@ class GradioApp(LoggerMixin):
                 f"Version: {self._get_version()}"
             )
             
+            # WebSocket client script
+            gr.HTML("""
+                <script src="/file=gui/static/websocket_client.js"></script>
+            """)
+
             # Add health check API endpoint
             # Note: Gradio allows adding custom API routes via the API
             # We'll expose the health check as a hidden component that can be queried
             health_check_output = gr.JSON(visible=False, elem_id="health_check")
             health_check_btn = gr.Button("Check Health", visible=False, elem_id="health_check_btn")
-            
+
             # Wire up health check
             health_check_handler = create_health_check_handler(self.health_checker)
             health_check_btn.click(

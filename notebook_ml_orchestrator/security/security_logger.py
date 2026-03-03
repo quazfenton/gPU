@@ -629,12 +629,16 @@ class SecurityLogger:
                         })
                 except ValueError:
                     continue
-            
+
+            # Calculate total event count (sum of counts, not number of entries)
+            total_event_count = sum(event['count'] for event in exported_events)
+
             # Format output
             if output_format == 'json':
                 return json.dumps({
                     'exported_at': datetime.now().isoformat(),
-                    'total_events': len(exported_events),
+                    'total_events': total_event_count,
+                    'event_entries': len(exported_events),
                     'events': exported_events
                 }, indent=2)
             

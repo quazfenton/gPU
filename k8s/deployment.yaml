@@ -303,7 +303,21 @@ spec:
 
 ---
 # =============================================================================
-# Secrets (Template - create actual secrets with kubectl)
+# Secrets Template (DO NOT APPLY - Create secrets with kubectl instead!)
+# =============================================================================
+# IMPORTANT: Never commit actual secret values to version control.
+# Create secrets using kubectl with securely generated values:
+#
+# kubectl create secret generic orchestrator-secrets \
+#   --from-literal=master-key=$(python -c "import secrets; print(secrets.token_hex(32))") \
+#   --from-literal=jwt-secret=$(python -c "import secrets; print(secrets.token_hex(32))") \
+#   --from-literal=credential-salt=$(python -c "import secrets; print(secrets.token_hex(32))")
+#
+# Or use a secrets management solution like:
+# - HashiCorp Vault
+# - AWS Secrets Manager
+# - Azure Key Vault
+# - Google Secret Manager
 # =============================================================================
 apiVersion: v1
 kind: Secret
@@ -312,13 +326,15 @@ metadata:
   namespace: default
   labels:
     app: notebook-ml-orchestrator
+  annotations:
+    description: "Placeholder - create with kubectl using secure random values"
 type: Opaque
 stringData:
-  # IMPORTANT: Replace these with actual secure values!
-  # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
-  master-key: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
-  jwt-secret: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
-  credential-salt: "CHANGE-ME-64-HEX-CHARACTERS-SECURE-RANDOM"
+  # These placeholder values will cause authentication to fail
+  # This is intentional - you MUST create real secrets before deployment
+  master-key: "REPLACE-WITH-SECURE-RANDOM-KEY-USE-KUBECTL-CREATE-SECRET"
+  jwt-secret: "REPLACE-WITH-SECURE-RANDOM-KEY-USE-KUBECTL-CREATE-SECRET"
+  credential-salt: "REPLACE-WITH-SECURE-RANDOM-HEX-USE-KUBECTL-CREATE-SECRET"
 
 ---
 # =============================================================================

@@ -276,35 +276,56 @@ class ContentSanitizer:
         allowed = self.allowed_attributes.get(tag_name, set())
         global_allowed = self.allowed_attributes.get('*', set())
         all_allowed = allowed | global_allowed
-        
-        # Parse attributes
+
+        # Parse quoted attributes (attr="value" or attr='value')
         attr_pattern = re.compile(r'(\w+)\s*=\s*["\']([^"\']*)["\']', re.IGNORECASE)
-        
+
         def replace_attr(match):
             attr_name = match.group(1).lower()
             attr_value = match.group(2)
-            
+
             if attr_name not in all_allowed:
                 removed.append(attr_name)
                 return ''
-            
+
             # Check URL attributes for dangerous schemes
             if attr_name in {'href', 'src', 'action'}:
                 if not self.is_safe_url(attr_value):
                     removed.append(f"{attr_name}={attr_value[:50]}")
                     return ''
-            
+
             return f' {attr_name}="{html.escape(attr_value, quote=True)}"'
-        
+
         sanitized = attr_pattern.sub(replace_attr, attributes)
+
+        # Parse unquoted attributes (attr=value without quotes)
+        unquoted_attr_pattern = re.compile(r'(\w+)\s*=\s*([^\s>"\']+)(?=\s|>|/>)', re.IGNORECASE)
         
+        def replace_unquoted_attr(match):
+            attr_name = match.group(1).lower()
+            attr_value = match.group(2)
+
+            if attr_name not in all_allowed:
+                removed.append(attr_name)
+                return ''
+
+            # Check URL attributes for dangerous schemes
+            if attr_name in {'href', 'src', 'action'}:
+                if not self.is_safe_url(attr_value):
+                    removed.append(f"{attr_name}={attr_value[:50]}")
+                    return ''
+
+            return f' {attr_name}="{html.escape(attr_value, quote=True)}"'
+
+        sanitized = unquoted_attr_pattern.sub(replace_unquoted_attr, sanitized)
+
         # Also remove bare attributes (without values)
         bare_attr_pattern = re.compile(r'\s+(\w+)(?=\s|>|/>)', re.IGNORECASE)
         sanitized = bare_attr_pattern.sub(
             lambda m: f' {m.group(1)}' if m.group(1).lower() in all_allowed else '',
             sanitized
         )
-        
+
         return {
             'attributes': sanitized,
             'removed': removed

@@ -30,17 +30,18 @@ services:
       - APP_NAME=${APP_NAME:-Notebook ML Orchestrator}
       - APP_ENV=${APP_ENV:-production}
       - DEBUG=${DEBUG:-false}
-      
-      # Security (REQUIRED - change in production!)
-      - MASTER_KEY=${MASTER_KEY:-change-me-in-production-at-least-32-bytes}
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-at-least-32-bytes}
-      - CREDENTIAL_SALT=${CREDENTIAL_SALT:-change-me-in-production-64-hex-chars}
-      
+
+      # Security (MUST be set via environment or .env file)
+      # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+      - MASTER_KEY=${MASTER_KEY:?ERROR: MASTER_KEY must be set. Generate with: python -c "import secrets; print(secrets.token_hex(32))"}
+      - JWT_SECRET=${JWT_SECRET:?ERROR: JWT_SECRET must be set. Generate with: python -c "import secrets; print(secrets.token_hex(32))"}
+      - CREDENTIAL_SALT=${CREDENTIAL_SALT:?ERROR: CREDENTIAL_SALT must be set (64 hex chars). Generate with: python -c "import secrets; print(secrets.token_hex(32))"}
+
       # GUI Configuration
       - GUI_HOST=0.0.0.0
       - GUI_PORT=7860
       - GUI_WEBSOCKET_PORT=7861
-      - GUI_ENABLE_AUTH=${GUI_ENABLE_AUTH:-false}
+      - GUI_ENABLE_AUTH=${GUI_ENABLE_AUTH:-true}
       - GUI_ENABLE_RATE_LIMITING=${GUI_ENABLE_RATE_LIMITING:-true}
       - GUI_RATE_LIMIT_PER_MINUTE=${GUI_RATE_LIMIT_PER_MINUTE:-60}
       - GUI_RATE_LIMIT_PER_HOUR=${GUI_RATE_LIMIT_PER_HOUR:-1000}

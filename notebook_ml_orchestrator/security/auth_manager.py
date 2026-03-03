@@ -650,13 +650,26 @@ class AuthManager:
                 self._audit_log('auth.failed', username, {'reason': 'incorrect_password', 'ip': ip_address})
                 logger.warning(f"Authentication failed: incorrect password for '{username}'")
                 raise AuthenticationError("Invalid username or password", "INVALID_CREDENTIALS")
-            
-            # Check 2FA if enabled
-            if self.enable_2fa and totp_code:
-                if not self._verify_totp(username, totp_code):
-                    self._record_failed_attempt(username, ip_address, user_agent, 'invalid_totp')
-                    self._audit_log('auth.failed', username, {'reason': 'invalid_totp', 'ip': ip_address})
-                    raise AuthenticationError("Invalid 2FA code", "INVALID_TOTP")
+
+            # Check 2FA if enabled (REQUIRED when 2FA is configured for user)
+            if self.enable_2fa:
+                # Check if user has 2FA configured
+                user_2fa_config = self._2fa_configs.get(username)
+                if user_2fa_config and user_2fa_config.enabled:
+                    # 2FA is required - must provide valid code
+                    if not totp_code:
+                        self._record_failed_attempt(username, ip_address, user_agent, '2fa_required')
+                        self._audit_log('auth.failed', username, {'reason': '2fa_required', 'ip': ip_address})
+                        raise AuthenticationError("2FA code required", "2FA_REQUIRED")
+                    
+                    if not self._verify_totp(username, totp_code):
+                        self._record_failed_attempt(username, ip_address, user_agent, 'invalid_totp')
+                        self._audit_log('auth.failed', username, {'reason': 'invalid_totp', 'ip': ip_address})
+                        raise AuthenticationError("Invalid 2FA code", "INVALID_TOTP")
+                else:
+                    # 2FA enabled globally but user hasn't configured yet
+                    # Allow login but could prompt user to set up 2FA
+                    logger.info(f"User {username} logged in without 2FA (not configured for user)")
             
             # Clear failed attempts on successful login
             self._failed_attempts[username].clear()

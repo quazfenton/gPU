@@ -1,0 +1,255 @@
+# GitHub Actions CI/CD Pipeline for Notebook ML Orchestrator
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PYTHON_VERSION: '3.11'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # =============================================================================
+  # Test Job
+  # =============================================================================
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-orchestrator.txt
+          pip install cryptography PyJWT bcrypt requests pyotp
+      
+      - name: Run security tests
+        run: |
+          python test_security_module.py
+      
+      - name: Run middleware tests
+        run: |
+          python test_security_middleware.py
+      
+      - name: Run pytest
+        run: |
+          pytest notebook_ml_orchestrator/tests/ -v --tb=short
+  
+  # =============================================================================
+  # Lint Job
+  # =============================================================================
+  lint:
+    name: Code Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black mypy
+      
+      - name: Run flake8
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      
+      - name: Run black (check only)
+        run: |
+          black --check notebook_ml_orchestrator/ gui/
+      
+      - name: Run mypy
+        run: |
+          mypy notebook_ml_orchestrator/ --ignore-missing-imports || true
+  
+  # =============================================================================
+  # Build Docker Image
+  # =============================================================================
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+  
+  # =============================================================================
+  # Deploy to Staging
+  # =============================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/develop'
+    
+    environment:
+      name: staging
+      url: https://staging.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to staging (placeholder)
+        run: |
+          echo "Deploying to staging environment..."
+          # Add your staging deployment commands here
+          # Examples:
+          # - kubectl apply -f k8s/ --namespace staging
+          # - docker-compose -f docker-compose.staging.yml up -d
+          # - helm upgrade orchestrator ./helm/notebook-ml-orchestrator --namespace staging
+  
+  # =============================================================================
+  # Deploy to Production
+  # =============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, deploy-staging]
+    if: github.ref == 'refs/heads/main'
+    
+    environment:
+      name: production
+      url: https://orchestrator.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Deploy to production (placeholder)
+        run: |
+          echo "Deploying to production environment..."
+          # Add your production deployment commands here
+          # Examples:
+          # - kubectl apply -f k8s/ --namespace production
+          # - helm upgrade orchestrator ./helm/notebook-ml-orchestrator --namespace production
+          
+      - name: Run smoke tests
+        run: |
+          echo "Running production smoke tests..."
+          # Add smoke tests here
+          # curl -f https://orchestrator.example.com/health
+  
+  # =============================================================================
+  # Security Scan
+  # =============================================================================
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: Run Bandit (Python security linter)
+        run: |
+          pip install bandit
+          bandit -r notebook_ml_orchestrator/ -f json -o bandit-results.json || true
+  
+  # =============================================================================
+  # Notify
+  # =============================================================================
+  notify:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [test, lint, build, deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            CI/CD Pipeline Status: ${{ job.status }}
+            Repository: ${{ github.repository }}
+            Branch: ${{ github.ref }}
+            Commit: ${{ github.sha }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+        if: always()

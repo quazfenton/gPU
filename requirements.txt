@@ -16,6 +16,9 @@ cryptography>=41.0.0
 PyJWT>=2.8.0
 bcrypt>=4.0.0
 
+# Cost tracking and visualization
+matplotlib>=3.7.0
+
 # Optional: Secrets manager integrations
 # hvac>=1.0.0  # HashiCorp Vault
 # boto3>=1.28.0  # AWS Secrets Manager

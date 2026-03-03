@@ -12,6 +12,14 @@ lerna-debug.log*
 *.env
 !.env.example
 
+# Security & Credentials (runtime-generated secrets)
+credentials.enc.json
+*.pem
+*.key
+*.crt
+ssl/
+certs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

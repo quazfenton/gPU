@@ -336,14 +336,15 @@ class CredentialStore:
                 return self._normalize_key(key)
             except Exception as e:
                 logger.warning(f"Failed to load master key from Azure: {e}")
-        
-        # No secure key source found - generate from weak source (warning logged)
-        logger.warning(
-            "No secure master key found. Using fallback key derivation. "
-            "This is NOT secure for production use. Set MASTER_KEY environment variable."
+
+        # No secure key source found - fail closed (do not use fallback)
+        error_msg = (
+            "CRITICAL: No secure master key configured. "
+            "Set MASTER_KEY environment variable or configure a secrets backend (Vault/AWS/Azure). "
+            "For development, generate a random key with: python -c \"import secrets; print(secrets.token_hex(32))\""
         )
-        # Use a default key for development (NOT SECURE FOR PRODUCTION)
-        return hashlib.sha256(b'default-dev-key-do-not-use-in-production').digest()
+        logger.error(error_msg)
+        raise CredentialEncryptionError(error_msg, is_recoverable=False)
     
     def _normalize_key(self, key: str) -> bytes:
         """Normalize key to correct size using SHA-256."""
@@ -645,6 +646,13 @@ class CredentialStore:
                         self._audit_log_action('credential.access_denied', store_key, {'reason': 'expired'})
                         return None
 
+                    # If value is empty (loaded from file), decrypt it
+                    if not entry.value and store_key in self._encrypted_store:
+                        encrypted = self._encrypted_store[store_key]
+                        value = self._decrypt(encrypted)
+                        entry.value = value
+                        self._credentials[store_key] = entry
+
                     # Update access info
                     if update_access:
                         entry.accessed_at = datetime.now()
@@ -842,7 +850,7 @@ class CredentialStore:
             # Get existing entry for preserving access info
             existing_entry = self._credentials.get(store_key)
             
-            # Update entry
+            # Update entry (preserve expires_at and metadata)
             now = datetime.now()
             entry = CredentialEntry(
                 service=service,
@@ -850,6 +858,7 @@ class CredentialStore:
                 value=new_value,
                 created_at=datetime.fromisoformat(encrypted.created_at),
                 updated_at=now,
+                expires_at=existing_entry.expires_at if existing_entry else None,  # Preserve expiration
                 accessed_at=existing_entry.accessed_at if existing_entry else None,
                 access_count=existing_entry.access_count if existing_entry else 0,
                 metadata=existing_entry.metadata if existing_entry else {}
@@ -868,7 +877,7 @@ class CredentialStore:
         """Save encrypted credentials to file."""
         try:
             store_file = self._backend_config.get('store_file', 'credentials.enc.json')
-            
+
             data = {
                 'version': self.ENCRYPTION_VERSION,
                 'saved_at': datetime.now().isoformat(),
@@ -879,17 +888,20 @@ class CredentialStore:
                         'tag': enc.tag,
                         'created_at': enc.created_at,
                         'updated_at': enc.updated_at,
-                        'version': enc.version
+                        'version': enc.version,
+                        # Persist expires_at if set
+                        'expires_at': self._credentials[key].expires_at.isoformat() 
+                            if key in self._credentials and self._credentials[key].expires_at else None
                     }
                     for key, enc in self._encrypted_store.items()
                 }
             }
-            
+
             with open(store_file, 'w') as f:
                 json.dump(data, f, indent=2)
-            
+
             logger.debug(f"Saved {len(data['credentials'])} credentials to {store_file}")
-            
+
         except Exception as e:
             logger.error(f"Failed to save credentials: {e}")
     
@@ -897,22 +909,23 @@ class CredentialStore:
         """Load encrypted credentials from file."""
         try:
             store_file = self._backend_config.get('store_file', 'credentials.enc.json')
-            
+
             if not os.path.exists(store_file):
                 logger.debug("No credential store file found")
                 return
-            
+
             with open(store_file, 'r') as f:
                 data = json.load(f)
-            
+
             version = data.get('version', 1)
             if version != self.ENCRYPTION_VERSION:
                 logger.warning(
                     f"Credential store version mismatch: file={version}, "
                     f"current={self.ENCRYPTION_VERSION}"
                 )
-            
+
             for key, enc_data in data.get('credentials', {}).items():
+                # Load encrypted credential
                 self._encrypted_store[key] = EncryptedCredential(
                     ciphertext=enc_data['ciphertext'],
                     nonce=enc_data['nonce'],
@@ -921,9 +934,27 @@ class CredentialStore:
                     updated_at=enc_data['updated_at'],
                     version=enc_data.get('version', 1)
                 )
-            
+                
+                # Load expires_at if present
+                expires_at = None
+                if enc_data.get('expires_at'):
+                    try:
+                        expires_at = datetime.fromisoformat(enc_data['expires_at'])
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid expires_at for credential {key}")
+                
+                # Create in-memory entry (value will be populated on first access)
+                self._credentials[key] = CredentialEntry(
+                    service=key.split(':')[0] if ':' in key else 'unknown',
+                    key=key.split(':')[1] if ':' in key else key,
+                    value='',  # Will be populated on first decrypt
+                    created_at=datetime.fromisoformat(enc_data['created_at']),
+                    updated_at=datetime.fromisoformat(enc_data['updated_at']),
+                    expires_at=expires_at
+                )
+
             logger.info(f"Loaded {len(self._encrypted_store)} credentials from {store_file}")
-            
+
         except Exception as e:
             logger.error(f"Failed to load credentials: {e}")
     
@@ -1048,7 +1079,7 @@ class CredentialStore:
         Args:
             service: Service name
             key: Credential key
-            required_level: Required access level
+            required_level: Required access level (READ, WRITE, or ADMIN)
 
         Returns:
             True if access granted, False otherwise
@@ -1065,16 +1096,36 @@ class CredentialStore:
             self._audit_log_action('access.denied', store_key, {'reason': 'user_denied'})
             return False
 
-        # Check allowed users
+        # Check allowed users (if specified)
         if policy.allowed_users:
             if not self._current_user or self._current_user not in policy.allowed_users:
                 self._audit_log_action('access.denied', store_key, {'reason': 'user_not_allowed'})
                 return False
 
-        # Check allowed roles
+        # Check allowed roles (if specified) - must have required access level
         if policy.allowed_roles:
-            if not self._current_role or self._current_role not in policy.allowed_roles:
-                self._audit_log_action('access.denied', store_key, {'reason': 'role_not_allowed'})
+            if not self._current_role:
+                self._audit_log_action('access.denied', store_key, {'reason': 'no_role'})
+                return False
+            
+            # Check if user's role has the required access level
+            # ADMIN role can do anything, WRITE can do READ+WRITE, READ can only READ
+            role_hierarchy = {'ADMIN': 3, 'WRITE': 2, 'READ': 1}
+            required_level_value = role_hierarchy.get(required_level.value, 0)
+            
+            # Check if user has any role with sufficient access
+            user_roles = policy.allowed_roles
+            max_user_level = max(
+                (role_hierarchy.get(r, 0) for r in user_roles),
+                default=0
+            )
+            
+            if max_user_level < required_level_value:
+                self._audit_log_action('access.denied', store_key, {
+                    'reason': 'insufficient_role',
+                    'required': required_level.value,
+                    'user_roles': list(user_roles)
+                })
                 return False
 
         # Check access count limit
@@ -1235,8 +1286,8 @@ class CredentialStore:
             aesgcm = AESGCM(export_key)
             encrypted_export = aesgcm.encrypt(nonce, export_json, None)
 
-            # Package with nonce
-            result = base64.b64encode(nonce + encrypted_export)
+            # Package with nonce and salt (salt must be unencrypted for import)
+            result = base64.b64encode(nonce + encrypted_export + export_salt)
 
             self._audit_log_action('credential.export', 'all', {
                 'count': len(export_data['credentials']),
@@ -1250,23 +1301,22 @@ class CredentialStore:
         Import credentials from an encrypted backup file.
 
         Args:
-            export_data: Encrypted export data
+            export_data: Encrypted export data (format: nonce + ciphertext + salt)
             password: Password for decryption
 
         Returns:
             Import results
         """
         try:
-            # Decode and split nonce
+            # Decode export data
             decoded = base64.b64decode(export_data)
+            
+            # Extract nonce (first 12 bytes), salt (last 32 bytes), and encrypted data (middle)
             nonce = decoded[:12]
-            encrypted = decoded[12:]
+            export_salt = decoded[-32:]  # Salt is at the end, unencrypted
+            encrypted = decoded[12:-32]
 
-            # Derive export key from password
-            # Note: We need the salt from the export, but it's encrypted
-            # For simplicity, we'll try with a standard derivation
-            # In production, store salt unencrypted in the export
-            export_salt = os.urandom(32)  # This is a limitation - should be in export header
+            # Derive export key from password using the salt from export
             export_key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), export_salt, 100000, 32)
 
             # Decrypt

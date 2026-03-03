@@ -27,6 +27,7 @@ from gui.components.template_management_tab_v2 import TemplateManagementTabV2
 from gui.components.backend_status_tab import BackendStatusTab
 from gui.components.backend_registration_tab import BackendRegistrationTab
 from gui.components.file_manager_tab import FileManagerTab
+from gui.components.cost_tracking_dashboard import CostTrackingDashboard
 from gui.components.file_upload_handler import FileUploadHandler
 from gui.events import EventEmitter
 from gui.websocket_server import WebSocketServer
@@ -167,6 +168,7 @@ class GradioApp(LoggerMixin):
         self.backend_status_tab = BackendStatusTab(self.backend_monitor)
         self.backend_registration_tab = BackendRegistrationTab(self.backend_router, self.backend_monitor)
         self.file_manager_tab = FileManagerTab(self.file_upload_handler)
+        self.cost_tracking_tab = CostTrackingDashboard(self.job_service, self.backend_monitor)
         
         # Setup observers for orchestrator components
         self.logger.info("Setting up observers for real-time updates")
@@ -209,10 +211,16 @@ class GradioApp(LoggerMixin):
             # Use default theme if unknown theme specified
             theme = gr.themes.Default()
         
+        # WebSocket client script for real-time updates
+        websocket_script = """
+        <script src="/file=gui/static/websocket_client.js"></script>
+        """
+
         with gr.Blocks(
             title="Notebook ML Orchestrator",
             theme=theme,
-            css=self._get_custom_css()
+            css=self._get_custom_css(),
+            head=websocket_script
         ) as interface:
             # Header
             gr.Markdown("# Notebook ML Orchestrator")
@@ -247,6 +255,10 @@ class GradioApp(LoggerMixin):
                 # File Manager Tab
                 with gr.Tab("File Manager"):
                     self.file_manager_tab.render()
+
+                # Cost Tracking Tab
+                with gr.Tab("Cost Tracking"):
+                    self.cost_tracking_tab.render()
             
             # Footer
             gr.Markdown("---")
@@ -254,11 +266,6 @@ class GradioApp(LoggerMixin):
                 "Notebook ML Orchestrator - Unified interface for ML job orchestration | "
                 f"Version: {self._get_version()}"
             )
-            
-            # WebSocket client script
-            gr.HTML("""
-                <script src="/file=gui/static/websocket_client.js"></script>
-            """)
 
             # Add health check API endpoint
             # Note: Gradio allows adding custom API routes via the API

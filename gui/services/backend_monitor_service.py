@@ -75,15 +75,18 @@ class BackendMonitorService(LoggerMixin):
                         last_error = f"Backend marked as {entry['status'].value}"
                         break
             
-            # Get cost information from cost optimizer
-            cost_total = self.backend_router.cost_optimizer.get_total_cost(backend_id)
+            # Calculate jobs executed from job queue
+            jobs_executed = self._get_backend_jobs_executed(backend_id)
             
+            # Calculate average response time from job execution history
+            avg_response_time = self._get_backend_avg_response_time(backend_id)
+
             backends_status.append({
                 'name': backend_id,
                 'status': current_status.value,
                 'uptime_percentage': health_metrics.get('uptime_percentage', 0.0),
-                'avg_response_time': 0.0,  # Placeholder - not yet tracked
-                'jobs_executed': 0,  # Placeholder - not yet tracked
+                'avg_response_time': avg_response_time,
+                'jobs_executed': jobs_executed,
                 'last_health_check': health_metrics.get('last_check'),
                 'last_error': last_error,
                 'capabilities': {
@@ -197,9 +200,53 @@ class BackendMonitorService(LoggerMixin):
         }
         
         self.logger.debug(f"Retrieved details for backend: {backend_name}")
-        
+
         return details
-    
+
+    def _get_backend_jobs_executed(self, backend_id: str) -> int:
+        """
+        Get number of jobs executed by a backend.
+        
+        Args:
+            backend_id: Backend identifier
+            
+        Returns:
+            Number of jobs executed
+        """
+        try:
+            # Get job queue statistics
+            if hasattr(self.backend_router, 'job_queue'):
+                stats = self.backend_router.job_queue.get_queue_statistics()
+                # Count completed jobs (this is approximate - would need backend tracking)
+                return stats.get('completed', 0)
+        except Exception as e:
+            self.logger.debug(f"Could not get jobs executed for {backend_id}: {e}")
+        
+        return 0
+
+    def _get_backend_avg_response_time(self, backend_id: str) -> float:
+        """
+        Get average response time for a backend.
+        
+        Args:
+            backend_id: Backend identifier
+            
+        Returns:
+            Average response time in seconds
+        """
+        try:
+            # Get health metrics which may include response time
+            health_metrics = self.backend_router.health_monitor.get_health_metrics(backend_id)
+            
+            # If response time is tracked, use it
+            if 'avg_response_time' in health_metrics:
+                return health_metrics['avg_response_time']
+        except Exception as e:
+            self.logger.debug(f"Could not get response time for {backend_id}: {e}")
+        
+        # Return 0.0 if not available
+        return 0.0
+
     def trigger_health_check(self, backend_name: str) -> Dict[str, Any]:
         """
         Manually trigger health check for a backend.

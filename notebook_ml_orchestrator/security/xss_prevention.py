@@ -333,7 +333,7 @@ class ContentSanitizer:
             tag_name: HTML tag name
             attributes: Attribute string
             
-        Returns:
+        decoded = re.sub(r'[\x00-\x20]+', '', html.unescape(url))
             Dictionary with sanitized attributes and removed list
         """
         removed = []

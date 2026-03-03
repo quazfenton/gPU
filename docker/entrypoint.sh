@@ -119,6 +119,7 @@ log "Initializing database..."
 python -c "
 from notebook_ml_orchestrator.core.database import DatabaseManager
 import os
+import sys
 
 db_path = os.environ.get('ORCHESTRATOR_DB_PATH', '/app/data/orchestrator.db')
 try:
@@ -126,7 +127,12 @@ try:
     db.initialize()
     print('Database initialized successfully')
 except Exception as e:
-    print(f'Database initialization failed: {e}')
+    print(f'Database initialization failed: {e}', file=sys.stderr)
+    sys.exit(1)
+" || error "Database initialization failed"
+log "Database ready"
+
+# =============================================================================
     raise
 " || warn "Database initialization skipped"
 log "Database ready"

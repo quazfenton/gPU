@@ -1,4 +1,9 @@
-# =============================================================================
+autoscaling:
+  enabled: false
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
 # Notebook ML Orchestrator - Helm Chart Values
 # =============================================================================
 

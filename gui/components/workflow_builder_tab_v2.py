@@ -438,7 +438,7 @@ class WorkflowBuilderTabV2(LoggerMixin):
                self._get_steps_list(workflow_state), \
                self._generate_mermaid_diagram(workflow_state['steps']), \
                json.dumps(workflow_state, indent=2)
-    
+
     def _update_step(self, step_name: str, template_name: str,
                     step_inputs: str, workflow_state: Dict) -> Tuple[Dict, List[List[str]], str, str]:
         """Update an existing step."""
@@ -446,7 +446,7 @@ class WorkflowBuilderTabV2(LoggerMixin):
             return workflow_state, self._get_steps_list(workflow_state), \
                    self._generate_mermaid_diagram([]), \
                    json.dumps(workflow_state, indent=2)
-        
+
         # Find and update step
         for step in workflow_state['steps']:
             if step['id'] == step_name:
@@ -456,8 +456,24 @@ class WorkflowBuilderTabV2(LoggerMixin):
                 except json.JSONDecodeError:
                     pass
                 break
-        
+
         return workflow_state, \
+               self._get_steps_list(workflow_state), \
+               self._generate_mermaid_diagram(workflow_state['steps']), \
+               json.dumps(workflow_state, indent=2)
+
+    def _validate_workflow(self, workflow_state: Dict) -> Tuple[str, Dict]:
+        """Validate workflow structure."""
+        try:
+            # Ensure workflow has a name field
+            if 'name' not in workflow_state:
+                workflow_state = workflow_state.copy()
+                workflow_state['name'] = "Unnamed Workflow"
+
+            # Call workflow service validation
+            result = self.workflow_service.validate_workflow(json.dumps(workflow_state))
+
+            if result[0]:  # Valid
                self._get_steps_list(workflow_state), \
                self._generate_mermaid_diagram(workflow_state['steps']), \
                json.dumps(workflow_state, indent=2)
@@ -475,26 +491,35 @@ class WorkflowBuilderTabV2(LoggerMixin):
             c for c in workflow_state.get('connections', [])
             if c.get('from') != step_name and c.get('to') != step_name
         ]
-        
+
         return workflow_state, \
                self._get_steps_list(workflow_state), \
                self._generate_mermaid_diagram(workflow_state['steps']), \
                json.dumps(workflow_state, indent=2)
-    
+
     def _validate_workflow(self, workflow_state: Dict) -> Tuple[str, Dict]:
         """Validate workflow structure."""
         try:
             # Call workflow service validation
             result = self.workflow_service.validate_workflow(json.dumps(workflow_state))
-            
+
             if result[0]:  # Valid
                 return "✅ Workflow validation passed", {"valid": True, "message": "Workflow is valid"}
             else:
                 return f"❌ Validation failed: {result[1]}", {"valid": False, "error": result[1]}
-                
+
         except Exception as e:
-                'created_at': datetime.now(timezone.utc).isoformat()
-    
+            return f"❌ Validation error: {str(e)}", {"valid": False, "error": str(e)}
+
+    def _save_workflow(self, workflow_name: str, workflow_state: Dict) -> Tuple[str, str]:
+        """Save workflow to file."""
+        try:
+            workflow_state_with_name = {**workflow_state, 'name': workflow_name or 'Untitled Workflow'}
+            workflow_data = {
+                'name': workflow_name or 'Untitled Workflow',
+                'workflow': workflow_state_with_name,
+                'created_at': str(gradio.utils.get_time())
+            }
     def _save_workflow(self, workflow_name: str, workflow_state: Dict) -> Tuple[str, str]:
         """Save workflow to file."""
         try:

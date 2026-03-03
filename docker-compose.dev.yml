@@ -10,17 +10,22 @@ services:
   orchestrator:
     build:
       target: development
-    
+
     # Enable debug mode
     environment:
       - DEBUG=true
       - VERBOSE_LOGGING=true
       - HOT_RELOAD=true
       - APP_ENV=development
-    
+
     # Additional ports for debugging
     ports:
-      - "${DEBUG_PORT:-5678}:5678"  # For Python debugger
+      - "127.0.0.1:${DEBUG_PORT:-5678}:5678"  # For Python debugger
+
+    # Mount source code for hot reload
+    volumes:
+      - ./notebook_ml_orchestrator:/app/notebook_ml_orchestrator
+      - ./gui:/app/gui
     
     # Mount source code for hot reload
     volumes:

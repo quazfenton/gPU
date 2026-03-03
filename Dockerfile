@@ -149,6 +149,10 @@ RUN pip install \
 
 # Copy development configuration
 COPY .flake8 ./
+
+# Switch back to non-root user
+USER ${APP_USER}
+COPY .flake8 ./
 COPY mypy.ini ./
 
 # Switch back to non-root user

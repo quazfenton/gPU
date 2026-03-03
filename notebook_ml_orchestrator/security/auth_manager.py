@@ -497,8 +497,8 @@ class AuthManager:
         try:
             decoded = base64.b64decode(token)
             sig_len = hashlib.sha256().digest_size
-            payload_json = decoded[:-sig_len]  # Remove signature
-            signature = decoded[-sig_len:]
+                payload_json = decoded[:-32]  # Remove signature
+                signature = decoded[-32:]
     
             # Verify signature
             expected_signature = hmac.new(

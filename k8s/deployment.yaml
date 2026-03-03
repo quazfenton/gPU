@@ -13,7 +13,7 @@ metadata:
     app: notebook-ml-orchestrator
     version: v1.0.0
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: notebook-ml-orchestrator
@@ -38,9 +38,24 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
-      
+
       # Service account
       serviceAccountName: orchestrator-sa
+      automountServiceAccountToken: true
+
+      # Image pull secrets (for private registries)
+      # imagePullSecrets:
+      #   - name: registry-secret
+---
+# ServiceAccount for the orchestrator
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orchestrator-sa
+  namespace: default
+  labels:
+    app: notebook-ml-orchestrator
+    version: v1.0.0
       
       # Image pull secrets (for private registries)
       # imagePullSecrets:
@@ -313,10 +328,17 @@ metadata:
   labels:
     app: notebook-ml-orchestrator
 type: Opaque
-stringData:
-  # IMPORTANT: Replace these with actual secure values!
-  # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
-  master-key: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
+# The 'stringData' block below is commented out to prevent insecure placeholder values
+# from being accidentally deployed. Generate and apply actual secrets separately.
+# stringData:
+#   # IMPORTANT: Replace these with actual secure values!
+#   # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+#   master-key: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
+#   jwt-secret: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
+#   credential-salt: "CHANGE-ME-64-HEX-CHARACTERS-SECURE-RANDOM"
+
+---
+# =============================================================================
   jwt-secret: "CHANGE-ME-AT-LEAST-32-BYTES-SECURE-RANDOM-KEY"
   credential-salt: "CHANGE-ME-64-HEX-CHARACTERS-SECURE-RANDOM"
 

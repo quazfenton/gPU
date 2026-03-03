@@ -201,11 +201,11 @@ class WebSocketClient {
             const message = this.messageQueue.shift();
             this._send(message);
         }
-        
+
         // Trigger connected event
         this._triggerEvent('connected', { url: this.url });
     }
-    
+
     /**
      * Internal: Handle incoming messages
      * @private
@@ -213,14 +213,21 @@ class WebSocketClient {
     _onMessage(event) {
         try {
             const data = JSON.parse(event.data);
-            
+
             // Handle server messages
             if (data.type === 'heartbeat') {
                 this._resetHeartbeat();
                 return;
             }
-            
-            if (data.type === 'event' && data.eventType) {
+
+            if (data.event && data.event.eventType) {
+                this._handleEvent(data.event.eventType, data.event.payload);
+            } else if (data.type === 'event' && data.eventType) {
+                this._handleEvent(data.eventType, data.payload);
+            }
+        } catch (error) {
+            console.error('[WebSocket] Message parse error:', error);
+        }
                 this._handleEvent(data.eventType, data.payload);
             }
         } catch (error) {
@@ -465,6 +472,13 @@ window.GradioWebSocketManager = GradioWebSocketManager;
 if (typeof window !== 'undefined') {
     window.addEventListener('DOMContentLoaded', () => {
         // Check if we're in a Gradio app
+        const gradioApp = document.querySelector('.gradio-container');
+        if (gradioApp) {
+            // Get WebSocket URL from Gradio config or use default
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const wsUrl = `${wsProtocol}://${window.location.host}/ws`;
+
+            const wsManager = new GradioWebSocketManager(wsUrl);
         const gradioApp = document.querySelector('.gradio-container');
         if (gradioApp) {
             // Get WebSocket URL from Gradio config or use default

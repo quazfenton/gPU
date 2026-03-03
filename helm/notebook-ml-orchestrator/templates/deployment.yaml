@@ -1,9 +1,10 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ include "notebook-ml-orchestrator.fullname" . }}
-  labels:
-    {{- include "notebook-ml-orchestrator.labels" . | nindent 4 }}
+            - name: SECURITY_LOG_FILE
+              value: {{ .Values.config.securityLogging.file | quote }}
+            - name: ORCHESTRATOR_DB_PATH
+              value: /app/data/orchestrator.db
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}

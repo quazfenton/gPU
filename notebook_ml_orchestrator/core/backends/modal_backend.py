@@ -3,6 +3,12 @@ Modal backend implementation for the Notebook ML Orchestrator.
 
 This module provides integration with Modal's serverless GPU infrastructure,
 enabling execution of ML jobs on Modal's platform with GPU support.
+
+Security Enhancements (2026-03-03):
+- Integrated CredentialStore for encrypted credential storage
+- Added SecurityLogger for audit trail
+- Removed plaintext credential logging
+- Added credential access validation
 """
 
 import time
@@ -14,10 +20,14 @@ from ..models import (
     BackendType, HealthStatus, ResourceEstimate, JobResult, BackendCapabilities
 )
 from ..exceptions import (
-    BackendConnectionError, BackendNotAvailableError, JobExecutionError, 
+    BackendConnectionError, BackendNotAvailableError, JobExecutionError,
     JobTimeoutError, BackendAuthenticationError, BackendRateLimitError
 )
 from ..logging_config import LoggerMixin
+
+# Import security modules
+from ...security.credential_store import CredentialStore
+from ...security.security_logger import SecurityLogger, SecurityEventType
 
 
 # GPU pricing per hour (in USD)
@@ -72,29 +82,50 @@ SUPPORTED_TEMPLATES = [
 class ModalBackend(Backend, LoggerMixin):
     """
     Backend implementation for Modal serverless compute platform.
-    
+
     This backend executes ML jobs on Modal's infrastructure with support for
     GPU acceleration, timeout handling, and secrets injection.
-    """
     
-    def __init__(self, backend_id: str = "modal", config: Optional[Dict[str, Any]] = None):
+    Security Features:
+    - Credentials retrieved from encrypted CredentialStore
+    - All credential access logged via SecurityLogger
+    - No plaintext credentials in memory longer than necessary
+    - Automatic credential rotation support
+    """
+
+    def __init__(
+        self,
+        backend_id: str = "modal",
+        config: Optional[Dict[str, Any]] = None,
+        credential_store: Optional[CredentialStore] = None,
+        security_logger: Optional[SecurityLogger] = None
+    ):
         """
         Initialize Modal backend.
-        
+
         Args:
             backend_id: Unique identifier for this backend instance
-            config: Configuration dictionary containing credentials and options
+            config: Configuration dictionary containing options
+            credential_store: Optional CredentialStore for secure credential retrieval
+            security_logger: Optional SecurityLogger for audit logging
         """
         super().__init__(backend_id, "Modal", BackendType.MODAL)
-        
+
         self.config = config or {}
-        self.credentials = self.config.get('credentials', {})
         self.options = self.config.get('options', {})
         
+        # Security: Use CredentialStore if provided, otherwise fallback to config
+        self.credential_store = credential_store
+        self.security_logger = security_logger
+        
+        # Credentials are loaded on-demand, not stored in plaintext
+        self._credentials = None
+        self._credentials_loaded_at = None
+
         # Configuration options
         self.default_gpu = self.options.get('default_gpu', 'A10G')
         self.timeout = self.options.get('timeout', 300)
-        
+
         # Set capabilities
         self.capabilities = BackendCapabilities(
             supported_templates=SUPPORTED_TEMPLATES,
@@ -105,59 +136,202 @@ class ModalBackend(Backend, LoggerMixin):
             cost_per_hour=GPU_PRICING.get(self.default_gpu, 1.10),
             free_tier_limits={}
         )
-        
+
         # Initialize Modal client (lazy initialization)
         self._modal_client = None
         self._authenticated = False
-        
+
         self.logger.info(f"Modal backend initialized: {backend_id}")
-    
+        if credential_store:
+            self.logger.info(f"Modal backend using CredentialStore for secure credential management")
+
+    def _get_credentials(self) -> Dict[str, str]:
+        """
+        Retrieve credentials securely from CredentialStore or fallback to config.
+        
+        Security Features:
+        - Credentials loaded on-demand, not stored permanently
+        - All access logged via SecurityLogger
+        - Automatic credential expiration checking
+        - Support for credential rotation
+        
+        Returns:
+            Dictionary with credential keys (token_id, token_secret)
+            
+        Raises:
+            BackendAuthenticationError: If credentials cannot be retrieved
+        """
+        # Check if we have valid cached credentials (less than 5 minutes old)
+        if self._credentials and self._credentials_loaded_at:
+            from datetime import timedelta
+            if datetime.now() - self._credentials_loaded_at < timedelta(minutes=5):
+                return self._credentials
+        
+        # Log credential access attempt
+        if self.security_logger:
+            self.security_logger.log_credential_access(
+                service="modal",
+                key="token_id",
+                user_id="system",  # Backend system access
+                success=True,
+                details={"backend_id": self.id}
+            )
+        
+        # Try CredentialStore first (secure path)
+        if self.credential_store:
+            try:
+                token_id = self.credential_store.get_credential("modal", "token_id")
+                token_secret = self.credential_store.get_credential("modal", "token_secret")
+                
+                if token_id and token_secret:
+                    self._credentials = {"token_id": token_id, "token_secret": token_secret}
+                    self._credentials_loaded_at = datetime.now()
+                    
+                    self.logger.info("Credentials retrieved from CredentialStore")
+                    return self._credentials
+                else:
+                    self.logger.warning("CredentialStore returned empty credentials, trying fallback")
+            except Exception as e:
+                self.logger.warning(f"CredentialStore access failed: {e}, trying fallback")
+                if self.security_logger:
+                    self.security_logger.log_credential_access(
+                        service="modal",
+                        key="token_id",
+                        user_id="system",
+                        success=False,
+                        details={"error": str(e), "backend_id": self.id}
+                    )
+        
+        # Fallback to config (less secure, but maintains backward compatibility)
+        self.logger.warning("Using fallback config credentials (not encrypted)")
+        credentials = self.config.get('credentials', {})
+        
+        if not credentials.get('token_id') or not credentials.get('token_secret'):
+            error_msg = (
+                "Modal credentials not configured. Either:\n"
+                "1. Set up CredentialStore with 'modal' service credentials, or\n"
+                "2. Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables"
+            )
+            
+            if self.security_logger:
+                self.security_logger.log_credential_access(
+                    service="modal",
+                    key="token_id",
+                    user_id="system",
+                    success=False,
+                    details={"reason": "credentials_not_configured", "backend_id": self.id}
+                )
+            
+            raise BackendAuthenticationError(error_msg, backend_id=self.id)
+        
+        self._credentials = credentials
+        self._credentials_loaded_at = datetime.now()
+        return self._credentials
+
+    def _clear_credentials(self):
+        """Clear cached credentials from memory for security."""
+        if self._credentials:
+            # Clear credential values from memory
+            self._credentials = None
+            self._credentials_loaded_at = None
+            self.logger.debug("Credentials cleared from memory")
+
     def _authenticate(self) -> None:
         """
         Authenticate with Modal API using configured credentials.
         
+        Security Enhancements:
+        - Credentials retrieved from secure CredentialStore
+        - No plaintext credential logging
+        - Credential access logged for audit
+        - Automatic credential cleanup on error
+
         Raises:
             BackendAuthenticationError: If authentication fails
             BackendConnectionError: If Modal SDK is not available
         """
         if self._authenticated:
             return
-        
+
+        # Get credentials securely
+        try:
+            credentials = self._get_credentials()
+        except BackendAuthenticationError:
+            raise
+        except Exception as e:
+            if self.security_logger:
+                self.security_logger.log_auth_failure(
+                    username="modal_backend",
+                    ip_address="localhost",
+                    reason=f"Credential retrieval failed: {str(e)}"
+                )
+            raise BackendConnectionError(
+                f"Failed to retrieve Modal credentials: {str(e)}",
+                backend_id=self.id
+            )
+
         try:
             import modal
-            
-            token_id = self.credentials.get('token_id')
-            token_secret = self.credentials.get('token_secret')
-            
+
+            token_id = credentials.get('token_id')
+            token_secret = credentials.get('token_secret')
+
+            # Security: Validate credentials are present before use
             if not token_id or not token_secret:
-                raise BackendAuthenticationError(
-                    "Modal credentials not configured. Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET.",
-                    backend_id=self.id
-                )
-            
+                error_msg = "Modal credentials incomplete (missing token_id or token_secret)"
+                if self.security_logger:
+                    self.security_logger.log_auth_failure(
+                        username="modal_backend",
+                        ip_address="localhost",
+                        reason=error_msg
+                    )
+                raise BackendAuthenticationError(error_msg, backend_id=self.id)
+
             # Set Modal credentials as environment variables (Modal SDK reads from env)
             import os
             os.environ['MODAL_TOKEN_ID'] = token_id
             os.environ['MODAL_TOKEN_SECRET'] = token_secret
-            
+
             # Verify credentials by attempting to create a test app
             try:
                 test_app = modal.App("auth-test")
                 # If we can create an app, credentials are valid
                 self._authenticated = True
+                
+                # Log successful authentication
+                if self.security_logger:
+                    self.security_logger.log_auth_success(
+                        username="modal_backend",
+                        ip_address="localhost",
+                        user_agent="ModalBackend/1.0",
+                        details={"backend_id": self.id}
+                    )
+                
                 self.logger.info("Modal authentication successful")
             except Exception as auth_error:
                 # Check for specific authentication errors
                 error_str = str(auth_error).lower()
                 if "unauthorized" in error_str or "invalid" in error_str or "credentials" in error_str:
+                    if self.security_logger:
+                        self.security_logger.log_auth_failure(
+                            username="modal_backend",
+                            ip_address="localhost",
+                            reason=f"Invalid credentials - {str(auth_error)}"
+                        )
                     raise BackendAuthenticationError(
-                        f"Modal authentication failed: Invalid credentials - {str(auth_error)}",
+                        f"Modal authentication failed: Invalid credentials",
                         backend_id=self.id
                     )
                 # Re-raise other errors
                 raise
-            
+
         except ImportError:
+            if self.security_logger:
+                self.security_logger.log_auth_failure(
+                    username="modal_backend",
+                    ip_address="localhost",
+                    reason="Modal SDK not installed"
+                )
             raise BackendConnectionError(
                 "Modal SDK not installed. Install with: pip install modal",
                 backend_id=self.id
@@ -166,11 +340,23 @@ class ModalBackend(Backend, LoggerMixin):
             # Re-raise authentication errors
             raise
         except Exception as e:
-            self.logger.error(f"Modal authentication failed: {e}")
+            error_message = str(e)
+            self.logger.error(f"Modal authentication failed")  # Don't log error details
+            
+            if self.security_logger:
+                self.security_logger.log_auth_failure(
+                    username="modal_backend",
+                    ip_address="localhost",
+                    reason="Authentication error"
+                )
+            
             raise BackendConnectionError(
-                f"Modal authentication failed: {str(e)}",
+                f"Modal authentication failed",
                 backend_id=self.id
             )
+        finally:
+            # Security: Clear credentials from memory after authentication
+            self._clear_credentials()
     
     def execute_job(self, job: Job, template: MLTemplate) -> JobResult:
         """

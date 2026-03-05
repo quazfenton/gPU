@@ -128,31 +128,25 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
     def get_next_job(self, backend_capabilities: List[str]) -> Optional[Job]:
         """
         Get the next job suitable for the given backend.
-        
+
+        SECURITY FIXED: Uses atomic database operation to prevent race condition
+        where multiple workers could retrieve and claim the same job.
+
         Args:
             backend_capabilities: List of backend capabilities
-            
+
         Returns:
             Next job to execute or None if no suitable job available
         """
-        with self._lock:
-            # Get queued jobs ordered by priority and creation time
-            queued_jobs = self.db.get_jobs_by_status(JobStatus.QUEUED, limit=50)
-            
-            for job in queued_jobs:
-                # Check if backend supports this template
-                if job.template_name in backend_capabilities or '*' in backend_capabilities:
-                    # Mark job as running
-                    job.status = JobStatus.RUNNING
-                    job.started_at = datetime.now()
-                    
-                    if self.db.update_job(job):
-                        self.logger.info(f"Job {job.id} assigned for execution")
-                        return job
-                    else:
-                        self.logger.error(f"Failed to update job {job.id} status to running")
-            
-            return None
+        # SECURITY: Use atomic claim operation instead of select-then-update
+        # This prevents race conditions in multi-worker scenarios
+        job = self.db.claim_next_job(backend_capabilities, worker_id=self.db.db_path.stem)
+        
+        if job:
+            self.logger.info(f"Job {job.id} assigned for execution (atomic claim)")
+            return job
+        
+        return None
     
     def update_job_backend(self, job_id: str, backend_id: str) -> bool:
         """

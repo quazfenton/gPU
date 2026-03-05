@@ -24,6 +24,14 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 
+class XSSPreventionError(Exception):
+    """Exception raised for XSS prevention errors."""
+    
+    def __init__(self, message: str, error_code: str = "XSS_PREVENTION"):
+        super().__init__(message)
+        self.error_code = error_code
+
+
 @dataclass
 class SanitizationResult:
     """Result of sanitization operation."""

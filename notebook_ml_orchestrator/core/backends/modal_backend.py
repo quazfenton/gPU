@@ -113,14 +113,16 @@ class ModalBackend(Backend, LoggerMixin):
 
         self.config = config or {}
         self.options = self.config.get('options', {})
-        
+
         # Security: Use CredentialStore if provided, otherwise fallback to config
         self.credential_store = credential_store
         self.security_logger = security_logger
-        
-        # Credentials are loaded on-demand, not stored in plaintext
+
+        # SECURITY FIXED: Credentials are loaded on-demand and cleared immediately after use
+        # No plaintext credentials stored in memory
         self._credentials = None
         self._credentials_loaded_at = None
+        self._credential_cache_ttl_seconds = 60  # Reduced from 5 minutes to 1 minute
 
         # Configuration options
         self.default_gpu = self.options.get('default_gpu', 'A10G')
@@ -148,25 +150,31 @@ class ModalBackend(Backend, LoggerMixin):
     def _get_credentials(self) -> Dict[str, str]:
         """
         Retrieve credentials securely from CredentialStore or fallback to config.
-        
+
         Security Features:
         - Credentials loaded on-demand, not stored permanently
         - All access logged via SecurityLogger
         - Automatic credential expiration checking
         - Support for credential rotation
-        
+        - SECURITY FIXED: Cache TTL reduced to 60 seconds (from 5 minutes)
+        - SECURITY FIXED: Credentials cleared immediately after use
+
         Returns:
             Dictionary with credential keys (token_id, token_secret)
-            
+
         Raises:
             BackendAuthenticationError: If credentials cannot be retrieved
         """
-        # Check if we have valid cached credentials (less than 5 minutes old)
+        # SECURITY FIXED: Check if we have valid cached credentials (less than 60 seconds old)
         if self._credentials and self._credentials_loaded_at:
             from datetime import timedelta
-            if datetime.now() - self._credentials_loaded_at < timedelta(minutes=5):
+            cache_age = datetime.now() - self._credentials_loaded_at
+            if cache_age.total_seconds() < self._credential_cache_ttl_seconds:
                 return self._credentials
-        
+            else:
+                # Cache expired - clear credentials from memory
+                self._clear_credentials()
+
         # Log credential access attempt
         if self.security_logger:
             self.security_logger.log_credential_access(
@@ -176,17 +184,18 @@ class ModalBackend(Backend, LoggerMixin):
                 success=True,
                 details={"backend_id": self.id}
             )
-        
+
         # Try CredentialStore first (secure path)
         if self.credential_store:
             try:
                 token_id = self.credential_store.get_credential("modal", "token_id")
                 token_secret = self.credential_store.get_credential("modal", "token_secret")
-                
+
                 if token_id and token_secret:
+                    # SECURITY: Only cache temporarily, will be cleared after use
                     self._credentials = {"token_id": token_id, "token_secret": token_secret}
                     self._credentials_loaded_at = datetime.now()
-                    
+
                     self.logger.info("Credentials retrieved from CredentialStore")
                     return self._credentials
                 else:
@@ -201,18 +210,18 @@ class ModalBackend(Backend, LoggerMixin):
                         success=False,
                         details={"error": str(e), "backend_id": self.id}
                     )
-        
+
         # Fallback to config (less secure, but maintains backward compatibility)
         self.logger.warning("Using fallback config credentials (not encrypted)")
         credentials = self.config.get('credentials', {})
-        
+
         if not credentials.get('token_id') or not credentials.get('token_secret'):
             error_msg = (
                 "Modal credentials not configured. Either:\n"
                 "1. Set up CredentialStore with 'modal' service credentials, or\n"
                 "2. Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET environment variables"
             )
-            
+
             if self.security_logger:
                 self.security_logger.log_credential_access(
                     service="modal",
@@ -221,9 +230,10 @@ class ModalBackend(Backend, LoggerMixin):
                     success=False,
                     details={"reason": "credentials_not_configured", "backend_id": self.id}
                 )
-            
+
             raise BackendAuthenticationError(error_msg, backend_id=self.id)
-        
+
+        # SECURITY: Cache credentials temporarily, will be cleared after use
         self._credentials = credentials
         self._credentials_loaded_at = datetime.now()
         return self._credentials

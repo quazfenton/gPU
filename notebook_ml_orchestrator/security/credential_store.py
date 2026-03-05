@@ -821,25 +821,45 @@ class CredentialStore:
         self,
         service: str,
         key: str,
-        new_value: str
+        new_value: str,
+        notify_webhook: bool = True
     ) -> bool:
         """
         Rotate a credential (update value while preserving metadata).
-        
+
+        SECURITY: Credential rotation is a critical security operation.
+        All rotations are logged and can trigger webhook notifications.
+
         Args:
             service: Service name
             key: Credential key
             new_value: New credential value
-            
+            notify_webhook: Whether to send rotation notification webhook
+
         Returns:
             True if rotated, False if not found
+
+        Raises:
+            ValueError: If new value is empty or same as old value
         """
+        store_key = f"{service}:{key}"
+
         with self._lock:
-            store_key = f"{service}:{key}"
-            
             if store_key not in self._encrypted_store:
                 return False
+
+            # Get old value for validation
+            old_value = self.get_credential(service, key, update_access=False)
             
+            # SECURITY: Validate new value is different
+            if old_value and new_value == old_value:
+                logger.warning(f"Credential rotation attempted with same value for {store_key}")
+                raise ValueError("New credential value must be different from old value")
+            
+            # SECURITY: Validate new value is not empty
+            if not new_value or not new_value.strip():
+                raise ValueError("New credential value cannot be empty")
+
             # Encrypt new value
             encrypted = self._encrypt(new_value)
 
@@ -849,7 +869,7 @@ class CredentialStore:
 
             # Get existing entry for preserving access info
             existing_entry = self._credentials.get(store_key)
-            
+
             # Update entry (preserve expires_at and metadata)
             now = datetime.now()
             entry = CredentialEntry(
@@ -864,13 +884,174 @@ class CredentialStore:
                 metadata=existing_entry.metadata if existing_entry else {}
             )
 
+            # Add rotation metadata
+            entry.metadata['last_rotated_at'] = now.isoformat()
+            entry.metadata['rotation_count'] = entry.metadata.get('rotation_count', 0) + 1
+
             self._encrypted_store[store_key] = encrypted
             self._credentials[store_key] = entry
+
+            if self._backend == 'file':
+                self._save_credentials()
+
+            # SECURITY: Audit log the rotation
+            self._audit_log_action('credential.rotated', store_key, {
+                'rotated_at': now.isoformat(),
+                'rotation_count': entry.metadata['rotation_count']
+            })
+
+            logger.info(f"Rotated credential {store_key} (rotation #{entry.metadata['rotation_count']})")
+            
+            # SECURITY: Send webhook notification if configured
+            if notify_webhook and self._audit_logger:
+                try:
+                    self._audit_logger({
+                        'event': 'credential_rotation',
+                        'timestamp': now.isoformat(),
+                        'service': service,
+                        'key': key,
+                        'rotation_count': entry.metadata['rotation_count'],
+                        'expires_at': entry.expires_at.isoformat() if entry.expires_at else None
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to send credential rotation notification: {e}")
+            
+            return True
+
+    def get_expiring_credentials(self, days_threshold: int = 7) -> List[Dict[str, Any]]:
+        """
+        Get list of credentials expiring within threshold.
+        
+        SECURITY: Proactive credential rotation support.
+        Call this method regularly to identify credentials needing rotation.
+        
+        Args:
+            days_threshold: Number of days to check for expiration
+            
+        Returns:
+            List of credential info dictionaries
+        """
+        from datetime import timedelta
+        
+        threshold = datetime.now() + timedelta(days=days_threshold)
+        expiring = []
+        
+        with self._lock:
+            for store_key, entry in self._credentials.items():
+                if entry.expires_at and entry.expires_at <= threshold:
+                    expiring.append({
+                        'service': entry.service,
+                        'key': entry.key,
+                        'expires_at': entry.expires_at.isoformat(),
+                        'days_until_expiry': (entry.expires_at - datetime.now()).days,
+                        'last_rotated': entry.metadata.get('last_rotated_at'),
+                        'rotation_count': entry.metadata.get('rotation_count', 0)
+                    })
+        
+        # Sort by expiry date (most urgent first)
+        expiring.sort(key=lambda x: x['days_until_expiry'])
+        
+        return expiring
+
+    def auto_rotate_expired_credentials(
+        self,
+        rotation_callback: callable,
+        notify_webhook: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Automatically rotate expired credentials.
+        
+        SECURITY: Automated credential rotation for enhanced security.
+        The callback should generate new credentials for the service.
+        
+        Args:
+            rotation_callback: Function that takes (service, key) and returns new credential value
+            notify_webhook: Whether to send rotation notifications
+            
+        Returns:
+            Dictionary with rotation results
+        """
+        results = {
+            'rotated': [],
+            'failed': [],
+            'skipped': []
+        }
+        
+        with self._lock:
+            for store_key, entry in list(self._credentials.items()):
+                # Check if expired
+                if entry.expires_at and datetime.now() > entry.expires_at:
+                    service, key = entry.service, entry.key
+                    
+                    try:
+                        # Generate new credential via callback
+                        new_value = rotation_callback(service, key)
+                        
+                        if new_value:
+                            # Rotate the credential
+                            if self.rotate_credential(service, key, new_value, notify_webhook):
+                                results['rotated'].append({
+                                    'service': service,
+                                    'key': key,
+                                    'rotated_at': datetime.now().isoformat()
+                                })
+                        else:
+                            results['skipped'].append({
+                                'service': service,
+                                'key': key,
+                                'reason': 'callback_returned_empty'
+                            })
+                    
+                    except Exception as e:
+                        results['failed'].append({
+                            'service': service,
+                            'key': key,
+                            'error': str(e)
+                        })
+        
+        logger.info(
+            f"Auto-rotation complete: {len(results['rotated'])} rotated, "
+            f"{len(results['failed'])} failed, {len(results['skipped'])} skipped"
+        )
+        
+        return results
+
+    def set_credential_expiration(
+        self,
+        service: str,
+        key: str,
+        expires_at: datetime
+    ) -> bool:
+        """
+        Set or update expiration date for a credential.
+        
+        SECURITY: Allows setting rotation schedules for credentials.
+        
+        Args:
+            service: Service name
+            key: Credential key
+            expires_at: Expiration datetime
+            
+        Returns:
+            True if updated, False if not found
+        """
+        store_key = f"{service}:{key}"
+        
+        with self._lock:
+            if store_key not in self._credentials:
+                return False
+            
+            self._credentials[store_key].expires_at = expires_at
+            self._credentials[store_key].metadata['expiration_set_at'] = datetime.now().isoformat()
             
             if self._backend == 'file':
                 self._save_credentials()
             
-            logger.info(f"Rotated credential {store_key}")
+            self._audit_log_action('credential.expiration_set', store_key, {
+                'expires_at': expires_at.isoformat()
+            })
+            
+            logger.info(f"Set expiration for {store_key}: {expires_at}")
             return True
     
     def _save_credentials(self) -> None:

@@ -321,23 +321,54 @@ class AuthManager:
             logger.info(f"[AUDIT] {action}: {username or 'unknown'} - {details}")
     
     def _get_secret_key(self, secret_key: Optional[str]) -> bytes:
-        """Get or generate secret key."""
-        # Try provided key
+        """Get or generate secret key.
+        
+        SECURITY: In production mode, fails closed if no secret key is configured.
+        Random keys are only allowed in development/test environments.
+        
+        Raises:
+            AuthenticationError: If secret key cannot be obtained in production
+        """
+        # Try provided key first
         if secret_key:
             if isinstance(secret_key, str):
                 return secret_key.encode('utf-8')
             return secret_key
-        
+
         # Try environment variable
         env_key = os.environ.get('JWT_SECRET')
         if env_key:
             logger.info("Loaded JWT secret from JWT_SECRET environment variable")
             return env_key.encode('utf-8')
+
+        # Check if running in production
+        is_production = os.environ.get('ENVIRONMENT', 'development').lower() in [
+            'production', 'prod', 'live'
+        ]
+        is_testing = os.environ.get('PYTEST_CURRENT_TEST') is not None
         
-        # Generate a secure random key for development
+        if is_production:
+            # SECURITY: Fail closed in production - do not start without proper secret
+            error_msg = (
+                "CRITICAL: JWT_SECRET not configured in production environment. "
+                "This is a security requirement - the application cannot start without a secure JWT secret. "
+                "Set JWT_SECRET environment variable with a cryptographically secure value. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+            logger.error(error_msg)
+            raise AuthenticationError(error_msg, "JWT_SECRET_NOT_CONFIGURED")
+        
+        if is_testing:
+            # Allow random key for testing
+            logger.warning("Using random JWT secret for testing (tokens will not persist)")
+            return secrets.token_bytes(32)
+
+        # Development mode - allow random key with strong warning
         logger.warning(
-            "No JWT secret provided. Using random key (tokens will not persist across restarts). "
-            "Set JWT_SECRET environment variable for production."
+            "DEVELOPMENT MODE: No JWT secret provided. Using random key. "
+            "WARNING: Tokens will NOT persist across application restarts. "
+            "Set JWT_SECRET environment variable for consistent behavior. "
+            "Generate secure key: python -c \"import secrets; print(secrets.token_hex(32))\""
         )
         return secrets.token_bytes(32)
     

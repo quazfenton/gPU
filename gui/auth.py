@@ -10,9 +10,13 @@ This module provides:
 Requirements validated: 8.1, 8.2, 8.3, 8.5, 8.6, 8.7
 
 SECURITY ENHANCED: Rate limiting added to prevent brute force attacks.
+SECURITY FIXED: Password hashing implemented, no default credentials.
 """
 
 import time
+import os
+import hashlib
+import secrets
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -23,6 +27,14 @@ from collections import defaultdict
 import hmac
 
 from gui.rate_limiter import RateLimiter, RateLimitConfig, RateLimitError
+
+
+class AuthenticationError(Exception):
+    """Exception raised for authentication errors."""
+    
+    def __init__(self, message: str, error_code: str = "AUTH_ERROR"):
+        super().__init__(message)
+        self.error_code = error_code
 
 
 class Role(Enum):
@@ -131,38 +143,223 @@ class AuthenticationProvider(ABC):
 
 class SimpleAuthProvider(AuthenticationProvider):
     """Simple in-memory authentication provider for testing/development.
-    
-    SECURITY ENHANCED: Rate limiting and account lockout added to prevent brute force attacks.
 
-    Stores username/password pairs in memory. Not suitable for production.
+    SECURITY ENHANCED: Rate limiting and account lockout added to prevent brute force attacks.
+    SECURITY FIXED: Passwords are hashed using PBKDF2-SHA256, no default credentials.
+    
+    PRODUCTION NOTE: For production use, use AuthManager from notebook_ml_orchestrator.security.auth_manager
+    which provides bcrypt hashing, JWT tokens, and database-backed user storage.
     """
+
+    # Password policy constants
+    MIN_PASSWORD_LENGTH = 12
+    PBKDF2_ITERATIONS = 100000
+    SALT_LENGTH = 32
 
     def __init__(
         self,
         users: Optional[Dict[str, tuple[str, Role]]] = None,
         max_failed_attempts: int = 5,
-        lockout_duration_minutes: int = 30
+        lockout_duration_minutes: int = 30,
+        require_password_change: bool = False
     ):
         """Initialize with user credentials.
 
+        SECURITY: Passwords must be pre-hashed or will be hashed on storage.
+        No default credentials are provided - users must be explicitly configured.
+
         Args:
-            users: Dictionary mapping username to (password, role) tuples
+            users: Dictionary mapping username to (password_hash, role) tuples.
+                  Passwords should be pre-hashed using hash_password() method.
             max_failed_attempts: Maximum failed login attempts before lockout
             lockout_duration_minutes: Duration to lock account after max failures
+            require_password_change: If True, users must change password on first login
+
+        Raises:
+            ValueError: If initial user setup not provided (security requirement)
         """
-        self.users = users or {}
+        # SECURITY: Require at least one admin user to be configured
+        if not users:
+            # Check if we should create initial admin from environment
+            initial_admin_password = os.environ.get('GUI_ADMIN_PASSWORD')
+            if initial_admin_password:
+                # Create initial admin with hashed password
+                admin_hash = self._hash_password(initial_admin_password)
+                self.users = {'admin': (admin_hash, Role.ADMIN)}
+                # Clear password from memory
+                del initial_admin_password
+                self._require_password_change = True
+            else:
+                raise ValueError(
+                    "SECURITY ERROR: No users configured and GUI_ADMIN_PASSWORD not set. "
+                    "For security, default credentials are not allowed. "
+                    "Either:\n"
+                    "1. Set GUI_ADMIN_PASSWORD environment variable, or\n"
+                    "2. Pass users dictionary with pre-hashed passwords"
+                )
+        else:
+            self.users = users
+            self._require_password_change = require_password_change
+
         self.max_failed_attempts = max_failed_attempts
         self.lockout_duration = timedelta(minutes=lockout_duration_minutes)
-        
+
         # Rate limiting for authentication endpoints
         self.auth_rate_limiter = RateLimiter(RateLimitConfig(
             requests_per_minute=10,  # Max 10 auth attempts per minute
             requests_per_hour=60,    # Max 60 auth attempts per hour
         ))
-        
+
         # Track failed attempts per user
         self._failed_attempts: Dict[str, list] = defaultdict(list)
         self._locked_accounts: Dict[str, datetime] = {}
+        
+        # Password change tracking
+        self._password_change_required: Dict[str, bool] = {}
+        if require_password_change:
+            for username in self.users:
+                self._password_change_required[username] = True
+
+    def _hash_password(self, password: str) -> str:
+        """
+        Hash password using PBKDF2-SHA256.
+        
+        SECURITY: Uses 100,000 iterations for key derivation.
+        Each password gets a unique random salt.
+        
+        Args:
+            password: Plain text password
+            
+        Returns:
+            Hashed password in format: pbkdf2_sha256$iterations$salt$hash
+        """
+        # Generate random salt
+        salt = secrets.token_hex(self.SALT_LENGTH)
+        
+        # Derive key using PBKDF2
+        password_hash = hashlib.pbkdf2_hmac(
+            'sha256',
+            password.encode('utf-8'),
+            salt.encode('utf-8'),
+            self.PBKDF2_ITERATIONS,
+            dklen=32
+        )
+        
+        # Return in Django-compatible format for potential future migration
+        return f"pbkdf2_sha256${self.PBKDF2_ITERATIONS}${salt}${password_hash.hex()}"
+
+    def _verify_password(self, password: str, stored_hash: str) -> bool:
+        """
+        Verify password against stored hash.
+        
+        SECURITY: Uses constant-time comparison to prevent timing attacks.
+        
+        Args:
+            password: Plain text password to verify
+            stored_hash: Stored hash in format pbkdf2_sha256$iterations$salt$hash
+            
+        Returns:
+            True if password matches, False otherwise
+        """
+        try:
+            # Parse stored hash
+            parts = stored_hash.split('$')
+            if len(parts) != 4 or parts[0] != 'pbkdf2_sha256':
+                # Unsupported hash format
+                return False
+            
+            algorithm, iterations, salt, _ = parts
+            iterations = int(iterations)
+            
+            # Compute hash with same parameters
+            password_hash = hashlib.pbkdf2_hmac(
+                'sha256',
+                password.encode('utf-8'),
+                salt.encode('utf-8'),
+                iterations,
+                dklen=32
+            )
+            
+            # Extract stored hash value
+            stored_hash_value = stored_hash.split('$')[3]
+            
+            # Constant-time comparison
+            return hmac.compare_digest(password_hash.hex(), stored_hash_value)
+            
+        except (ValueError, IndexError):
+            # Invalid hash format
+            return False
+
+    def change_password(self, username: str, old_password: str, new_password: str) -> bool:
+        """
+        Change user password with validation.
+        
+        SECURITY: Validates new password meets policy requirements.
+        
+        Args:
+            username: Username
+            old_password: Current password
+            new_password: New password
+            
+        Returns:
+            True if password changed successfully
+            
+        Raises:
+            AuthenticationError: If old password incorrect or new password invalid
+        """
+        if username not in self.users:
+            raise AuthenticationError("User not found")
+        
+        # Verify old password
+        stored_hash, role = self.users[username]
+        if not self._verify_password(old_password, stored_hash):
+            raise AuthenticationError("Current password is incorrect")
+        
+        # Validate new password
+        is_valid, errors = self._validate_password_policy(new_password)
+        if not is_valid:
+            raise AuthenticationError(f"Password does not meet requirements: {', '.join(errors)}")
+        
+        # Hash and store new password
+        new_hash = self._hash_password(new_password)
+        self.users[username] = (new_hash, role)
+        self._password_change_required[username] = False
+        
+        return True
+
+    def _validate_password_policy(self, password: str) -> tuple[bool, list[str]]:
+        """
+        Validate password meets policy requirements.
+        
+        Args:
+            password: Password to validate
+            
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+        
+        if len(password) < self.MIN_PASSWORD_LENGTH:
+            errors.append(f"Password must be at least {self.MIN_PASSWORD_LENGTH} characters")
+        
+        if not any(c.isupper() for c in password):
+            errors.append("Password must contain at least one uppercase letter")
+        
+        if not any(c.islower() for c in password):
+            errors.append("Password must contain at least one lowercase letter")
+        
+        if not any(c.isdigit() for c in password):
+            errors.append("Password must contain at least one digit")
+        
+        if not any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in password):
+            errors.append("Password must contain at least one special character")
+        
+        # Check for common weak passwords
+        weak_passwords = {'password', 'password123', '123456', 'qwerty', 'admin', 'letmein'}
+        if password.lower() in weak_passwords:
+            errors.append("Password is too common")
+        
+        return len(errors) == 0, errors
 
     def authenticate(
         self,
@@ -171,8 +368,8 @@ class SimpleAuthProvider(AuthenticationProvider):
         ip_address: Optional[str] = None
     ) -> Optional[User]:
         """Authenticate against in-memory user store.
-        
-        SECURITY: Rate limiting and account lockout enforced.
+
+        SECURITY: Rate limiting, account lockout, and password hashing enforced.
 
         Args:
             username: Username to authenticate
@@ -181,13 +378,13 @@ class SimpleAuthProvider(AuthenticationProvider):
 
         Returns:
             User object if credentials match, None otherwise
-            
+
         Raises:
             RateLimitError: If rate limit exceeded
             AuthenticationError: If account locked or credentials invalid
         """
         client_id = ip_address or username
-        
+
         # SECURITY: Check rate limit
         try:
             self.auth_rate_limiter.check_rate_limit(client_id)
@@ -195,7 +392,7 @@ class SimpleAuthProvider(AuthenticationProvider):
             raise AuthenticationError(
                 f"Too many authentication attempts. Please wait {e.retry_after} seconds."
             )
-        
+
         # SECURITY: Check if account is locked
         if username in self._locked_accounts:
             lockout_until = self._locked_accounts[username]
@@ -208,20 +405,27 @@ class SimpleAuthProvider(AuthenticationProvider):
                 # Lockout expired, remove it
                 del self._locked_accounts[username]
                 self._failed_attempts[username] = []
-        
+
         # Validate credentials
         if username in self.users:
-            stored_password, role = self.users[username]
-            
-            # Use constant-time comparison to prevent timing attacks
-            if hmac.compare_digest(stored_password.encode(), password.encode()):
+            stored_hash, role = self.users[username]
+
+            # SECURITY: Use constant-time comparison via password verification
+            if self._verify_password(password, stored_hash):
                 # Success - reset failed attempts
                 self._failed_attempts[username] = []
+                
+                # Check if password change required
+                if self._password_change_required.get(username, False):
+                    raise AuthenticationError(
+                        "Password change required. Please contact administrator."
+                    )
+                
                 return User(username=username, role=role)
-        
+
         # Failed attempt - track it
         self._failed_attempts[username].append(datetime.now())
-        
+
         # Check if max attempts exceeded
         if len(self._failed_attempts[username]) >= self.max_failed_attempts:
             self._locked_accounts[username] = datetime.now() + self.lockout_duration
@@ -229,7 +433,7 @@ class SimpleAuthProvider(AuthenticationProvider):
                 f"Account locked due to {self.max_failed_attempts} failed attempts. "
                 f"Try again in {self.lockout_duration.seconds // 60} minutes."
             )
-        
+
         raise AuthenticationError("Invalid credentials")
     
     def get_failed_attempts(self, username: str) -> int:

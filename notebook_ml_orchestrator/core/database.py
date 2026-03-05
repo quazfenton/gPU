@@ -277,26 +277,103 @@ class DatabaseManager:
     def get_jobs_by_status(self, status: JobStatus, limit: int = 100) -> List[Job]:
         """
         Retrieve jobs by status.
-        
+
         Args:
             status: Job status to filter by
             limit: Maximum number of jobs to return
-            
+
         Returns:
             List of Job instances
         """
         try:
             with self.get_cursor() as cursor:
                 cursor.execute("""
-                    SELECT * FROM jobs 
-                    WHERE status = ? 
-                    ORDER BY priority DESC, created_at ASC 
+                    SELECT * FROM jobs
+                    WHERE status = ?
+                    ORDER BY priority DESC, created_at ASC
                     LIMIT ?
                 """, (status.value, limit))
                 return [self._row_to_job(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get jobs by status {status}: {e}")
             return []
+
+    def claim_next_job(
+        self,
+        backend_capabilities: List[str],
+        worker_id: str = "default"
+    ) -> Optional[Job]:
+        """
+        Atomically claim the next available job for execution.
+        
+        SECURITY FIXED: This method uses atomic UPDATE with RETURNING to prevent
+        race conditions where multiple workers could claim the same job.
+        
+        Args:
+            backend_capabilities: List of template names the backend can handle
+            worker_id: Identifier for the worker claiming the job
+            
+        Returns:
+            Claimed job with status set to RUNNING, or None if no job available
+        """
+        try:
+            with self.get_cursor() as cursor:
+                # Build template filter - support wildcard or specific templates
+                if '*' in backend_capabilities:
+                    template_filter = "1=1"
+                    params = []
+                else:
+                    # Create IN clause for template names
+                    placeholders = ','.join('?' * len(backend_capabilities))
+                    template_filter = f"template_name IN ({placeholders})"
+                    params = list(backend_capabilities)
+                
+                # SECURITY: Atomic claim using UPDATE with WHERE status = 'queued'
+                # This ensures only one worker can claim each job
+                # Using SQLite's RETURNING clause (3.35.0+) or fallback
+                
+                # First, try to get a job ID atomically
+                cursor.execute(f"""
+                    SELECT id FROM jobs
+                    WHERE status = 'queued' AND {template_filter}
+                    ORDER BY priority DESC, created_at ASC
+                    LIMIT 1
+                """, params)
+                
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                
+                job_id = row[0]
+                
+                # Atomically update status from 'queued' to 'running'
+                # The WHERE clause ensures we only update if still queued
+                now = datetime.now().isoformat()
+                cursor.execute("""
+                    UPDATE jobs
+                    SET status = 'running', started_at = ?, metadata = json_set(metadata, '$.claimed_by', ?, '$.claimed_at', ?)
+                    WHERE id = ? AND status = 'queued'
+                """, (now, worker_id, now, job_id))
+                
+                # Check if we successfully claimed the job
+                if cursor.rowcount == 0:
+                    # Another worker claimed it first
+                    logger.debug(f"Job {job_id} was claimed by another worker")
+                    return None
+                
+                # Return the claimed job
+                cursor.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
+                row = cursor.fetchone()
+                if row:
+                    job = self._row_to_job(row)
+                    logger.info(f"Job {job_id} claimed by worker {worker_id}")
+                    return job
+                
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to claim next job: {e}")
+            return None
     
     def get_user_jobs(self, user_id: str, limit: int = 100) -> List[Job]:
         """

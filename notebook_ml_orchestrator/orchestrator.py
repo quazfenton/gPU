@@ -4,9 +4,17 @@ Main Orchestrator class that initializes and coordinates all components.
 This module provides the central Orchestrator class that manages the lifecycle
 of all orchestrator components including job queue, backend router, workflow engine,
 batch processor, and template registry.
+
+SECURITY FIXED: Comprehensive input validation added to prevent:
+- Injection attacks via user_id
+- DoS via large inputs
+- Invalid routing strategy values
+- Deeply nested data structures
 """
 
 import logging
+import re
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -23,6 +31,15 @@ from .config import get_config, OrchestratorConfig
 
 
 logger = logging.getLogger(__name__)
+
+# SECURITY: Input validation constants
+MAX_USER_ID_LENGTH = 64
+MAX_INPUT_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+MAX_INPUT_DEPTH = 10  # Maximum nesting depth for input dictionaries
+VALID_ROUTING_STRATEGIES = {"cost-optimized", "round-robin", "least-loaded", "performance"}
+
+# SECURITY: User ID pattern - alphanumeric, underscore, hyphen only
+USER_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
 
 
 class Orchestrator:
@@ -135,12 +152,97 @@ class Orchestrator:
     def get_batch_processor(self) -> BatchProcessor:
         """
         Get the batch processor instance.
-        
+
         Returns:
             BatchProcessor instance
         """
         return self.batch_processor
-    
+
+    def _validate_user_id(self, user_id: str) -> None:
+        """
+        Validate user_id format to prevent injection attacks.
+        
+        SECURITY: Validates user_id against strict pattern.
+        
+        Args:
+            user_id: User ID to validate
+            
+        Raises:
+            JobValidationError: If user_id is invalid
+        """
+        if not user_id:
+            raise JobValidationError("User ID is required")
+        
+        if len(user_id) > MAX_USER_ID_LENGTH:
+            raise JobValidationError(
+                f"User ID exceeds maximum length of {MAX_USER_ID_LENGTH} characters"
+            )
+        
+        if not USER_ID_PATTERN.match(user_id):
+            raise JobValidationError(
+                "User ID can only contain alphanumeric characters, underscores, and hyphens"
+            )
+
+    def _validate_inputs_size(self, inputs: Dict[str, Any]) -> None:
+        """
+        Validate input size to prevent DoS attacks.
+        
+        SECURITY: Checks serialized input size and nesting depth.
+        
+        Args:
+            inputs: Input dictionary to validate
+            
+        Raises:
+            JobValidationError: If inputs are too large or deeply nested
+        """
+        import json
+        
+        # Check serialized size
+        try:
+            serialized_size = sys.getsizeof(json.dumps(inputs))
+            if serialized_size > MAX_INPUT_SIZE_BYTES:
+                raise JobValidationError(
+                    f"Input size ({serialized_size} bytes) exceeds maximum allowed "
+                    f"({MAX_INPUT_SIZE_BYTES} bytes)"
+                )
+        except (TypeError, ValueError) as e:
+            raise JobValidationError(f"Inputs are not JSON serializable: {str(e)}")
+        
+        # Check nesting depth
+        def get_depth(obj, current_depth=0):
+            if not isinstance(obj, dict):
+                return current_depth
+            if not obj:
+                return current_depth
+            return max(get_depth(v, current_depth + 1) for v in obj.values())
+        
+        depth = get_depth(inputs)
+        if depth > MAX_INPUT_DEPTH:
+            raise JobValidationError(
+                f"Input nesting depth ({depth}) exceeds maximum allowed ({MAX_INPUT_DEPTH})"
+            )
+
+    def _validate_routing_strategy(self, routing_strategy: str) -> None:
+        """
+        Validate routing strategy is a known value.
+        
+        SECURITY: Prevents injection of arbitrary strategy values.
+        
+        Args:
+            routing_strategy: Strategy name to validate
+            
+        Raises:
+            JobValidationError: If strategy is invalid
+        """
+        if not routing_strategy:
+            raise JobValidationError("Routing strategy is required")
+        
+        if routing_strategy not in VALID_ROUTING_STRATEGIES:
+            raise JobValidationError(
+                f"Invalid routing strategy '{routing_strategy}'. "
+                f"Valid strategies: {', '.join(sorted(VALID_ROUTING_STRATEGIES))}"
+            )
+
     def submit_job(
         self,
         template_name: str,
@@ -150,28 +252,40 @@ class Orchestrator:
     ) -> str:
         """
         Submit a job with template validation and automatic backend routing.
-        
+
         This method integrates templates with the job submission flow by:
         1. Retrieving the template from the registry
-        2. Validating inputs against the template schema
-        3. Estimating resource requirements from the template
-        4. Creating a job and submitting it to the queue
-        5. Routing the job to an appropriate backend
-        
+        2. SECURITY: Validating user_id format
+        3. SECURITY: Validating input size and structure
+        4. SECURITY: Validating routing strategy
+        5. Validating inputs against the template schema
+        6. Estimating resource requirements from the template
+        7. Creating a job and submitting it to the queue
+        8. Routing the job to an appropriate backend
+
         Args:
             template_name: Name of the template to execute
             inputs: Input parameters for the template
             user_id: User ID submitting the job (default: "default")
             routing_strategy: Backend routing strategy (default: "cost-optimized")
-            
+
         Returns:
             Job ID
-            
+
         Raises:
             TemplateNotFoundError: If template is not found in registry
             JobValidationError: If input validation fails
             BackendNotAvailableError: If no suitable backend is available
         """
+        # SECURITY VALIDATION 1: Validate user_id format
+        self._validate_user_id(user_id)
+        
+        # SECURITY VALIDATION 2: Validate input size and structure
+        self._validate_inputs_size(inputs)
+        
+        # SECURITY VALIDATION 3: Validate routing strategy
+        self._validate_routing_strategy(routing_strategy)
+        
         # Get template from registry
         template = self.template_registry.get_template(template_name)
         if not template:
@@ -179,23 +293,23 @@ class Orchestrator:
                 f"Template '{template_name}' not found in registry. "
                 f"Available templates: {list(self.template_registry.list_templates())}"
             )
-        
+
         # Validate inputs against template schema
         try:
             template.validate_inputs(**inputs)
         except ValueError as e:
             raise JobValidationError(f"Input validation failed: {str(e)}") from e
-        
+
         # Estimate resource requirements from template
         resource_estimate = self.backend_router.template_to_resource_estimate(template)
-        
+
         logger.info(
             f"Submitting job for template '{template_name}' with resource requirements: "
             f"GPU={resource_estimate.requires_gpu}, "
             f"memory={resource_estimate.memory_gb}GB, "
             f"duration={resource_estimate.estimated_duration_minutes}min"
         )
-        
+
         # Create job
         job = Job(
             template_name=template_name,

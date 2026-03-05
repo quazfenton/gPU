@@ -118,6 +118,12 @@ class LLMChatTemplate(Template):
         self._initialized = True
 
     def run(self, **kwargs) -> Dict[str, Any]:
+        """
+        Execute LLM chat with secure credential handling.
+        
+        SECURITY: Credentials are loaded from environment variables or CredentialStore.
+        NEVER hardcode credentials in template code.
+        """
         self.validate_inputs(**kwargs)
 
         user_prompt = kwargs["prompt"]
@@ -133,7 +139,17 @@ class LLMChatTemplate(Template):
         if model.startswith("gpt"):
             try:
                 import openai
-                client = openai.OpenAI()
+                
+                # SECURITY: Load API key from environment variable
+                # NEVER hardcode credentials in template
+                api_key = os.getenv("OPENAI_API_KEY")
+                if not api_key:
+                    raise ValueError(
+                        "OPENAI_API_KEY environment variable not set. "
+                        "Add OPENAI_API_KEY=your-key to .env file or use CredentialStore."
+                    )
+                
+                client = openai.OpenAI(api_key=api_key)
 
                 messages = [
                     {"role": "system", "content": system},
@@ -162,6 +178,9 @@ class LLMChatTemplate(Template):
                     "finish_reason": result.choices[0].finish_reason,
                 }
 
+            except ValueError as e:
+                # Re-raise validation errors (like missing API key)
+                raise
             except Exception as e:
                 response = {
                     "response": f"Error: {str(e)}",
@@ -173,7 +192,17 @@ class LLMChatTemplate(Template):
         elif model.startswith("claude"):
             try:
                 import anthropic
-                client = anthropic.Anthropic()
+                
+                # SECURITY: Load API key from environment variable
+                # NEVER hardcode credentials in template
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                if not api_key:
+                    raise ValueError(
+                        "ANTHROPIC_API_KEY environment variable not set. "
+                        "Add ANTHROPIC_API_KEY=your-key to .env file or use CredentialStore."
+                    )
+                
+                client = anthropic.Anthropic(api_key=api_key)
 
                 result = client.messages.create(
                     model="claude-3-opus-20240229" if "opus" in model else
@@ -196,6 +225,9 @@ class LLMChatTemplate(Template):
                     "finish_reason": "stop",
                 }
 
+            except ValueError as e:
+                # Re-raise validation errors (like missing API key)
+                raise
             except Exception as e:
                 response = {
                     "response": f"Error: {str(e)}",

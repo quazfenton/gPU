@@ -2,101 +2,199 @@
 
 This module implements a FastAPI WebSocket server that broadcasts events
 from the EventEmitter to all connected clients.
+
+SECURITY ENHANCED: WebSocket connections now require JWT authentication.
 """
 
 import asyncio
 import json
-from typing import List
+import logging
+from typing import List, Tuple, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 from gui.events import EventEmitter
+from gui.auth import AuthManager, User
+from notebook_ml_orchestrator.core.models import Permission
+
+logger = logging.getLogger(__name__)
+
+
+class WebSocketConnection:
+    """Represents an authenticated WebSocket connection."""
+    
+    def __init__(self, websocket: WebSocket, user: User):
+        self.websocket = websocket
+        self.user = user
+        self.connected_at = asyncio.get_event_loop().time()
 
 
 class WebSocketServer:
     """FastAPI WebSocket server for real-time updates.
-    
+
     The WebSocketServer manages WebSocket connections and broadcasts events
     from the EventEmitter to all connected clients. It listens for events
     like job status changes, backend health updates, and workflow progress,
     and pushes these updates to all connected WebSocket clients in real-time.
     
-    Example:
-        >>> from gui.events import EventEmitter
-        >>> emitter = EventEmitter()
-        >>> ws_server = WebSocketServer(emitter)
-        >>> ws_server.setup_listeners()
-        >>> # In FastAPI endpoint:
-        >>> @app.websocket("/ws")
-        >>> async def websocket_endpoint(websocket: WebSocket):
-        ...     await ws_server.connect(websocket)
+    SECURITY: All connections require valid JWT authentication.
     """
-    
-    def __init__(self, event_emitter: EventEmitter):
+
+    def __init__(self, event_emitter: EventEmitter, auth_manager: Optional[AuthManager] = None):
         """Initialize the WebSocket server.
-        
+
         Args:
             event_emitter: The EventEmitter instance to listen for events
+            auth_manager: Optional AuthManager for JWT validation (created if not provided)
         """
         self.event_emitter = event_emitter
-        self.connections: List[WebSocket] = []
-    
-    async def connect(self, websocket: WebSocket) -> None:
-        """Accept a WebSocket connection.
+        self.auth_manager = auth_manager or AuthManager()
+        self.connections: List[WebSocketConnection] = []
+        self._lock = asyncio.Lock()
         
+        logger.info("WebSocketServer initialized with JWT authentication")
+
+    async def connect(self, websocket: WebSocket, token: str) -> Optional[WebSocketConnection]:
+        """Accept a WebSocket connection after JWT validation.
+
         Args:
             websocket: The WebSocket connection to accept
-        
+            token: JWT token for authentication
+
+        Returns:
+            WebSocketConnection if successful, None if authentication failed
+
         Example:
             >>> @app.websocket("/ws")
             >>> async def websocket_endpoint(websocket: WebSocket):
-            ...     await ws_server.connect(websocket)
+            ...     token = await websocket.receive_text()
+            ...     conn = await ws_server.connect(websocket, token)
+            ...     if not conn:
+            ...         return  # Authentication failed
         """
-        await websocket.accept()
-        self.connections.append(websocket)
-        
+        # SECURITY: Validate JWT token
         try:
-            # Keep the connection alive and handle incoming messages
-            while True:
-                # Wait for any message from client (ping/pong, etc.)
-                await websocket.receive_text()
-        except WebSocketDisconnect:
-            await self.disconnect(websocket)
-    
+            user = self.auth_manager.verify_token(token)
+        except Exception as e:
+            logger.warning(f"WebSocket authentication failed: {e}")
+            try:
+                await websocket.close(code=4001, reason=f"Invalid token: {str(e)}")
+            except Exception:
+                pass
+            return None
+        
+        # SECURITY: Verify user has permission to view events
+        if not user.has_permission(Permission.VIEW_BACKEND_STATUS):
+            logger.warning(f"User {user.username} lacks permission for WebSocket access")
+            try:
+                await websocket.close(code=4003, reason="Unauthorized: insufficient permissions")
+            except Exception:
+                pass
+            return None
+        
+        # Accept authenticated connection
+        await websocket.accept()
+        connection = WebSocketConnection(websocket, user)
+        
+        async with self._lock:
+            self.connections.append(connection)
+        
+        logger.info(f"WebSocket connected for user {user.username}")
+        
+        # Send welcome message
+        await self._send_to_connection(
+            connection,
+            {
+                'event_type': 'system.connected',
+                'data': {
+                    'user': user.username,
+                    'role': user.role.value,
+                    'message': 'Connected to real-time updates'
+                }
+            }
+        )
+        
+        return connection
+
     async def disconnect(self, websocket: WebSocket) -> None:
         """Handle WebSocket disconnection.
-        
+
         Args:
             websocket: The WebSocket connection to disconnect
         """
-        if websocket in self.connections:
-            self.connections.remove(websocket)
-    
+        async with self._lock:
+            for conn in self.connections:
+                if conn.websocket == websocket:
+                    self.connections.remove(conn)
+                    logger.info(f"WebSocket disconnected for user {conn.user.username}")
+                    break
+
     async def broadcast(self, message: dict) -> None:
         """Broadcast a message to all connected clients.
-        
+
         Args:
             message: The message dictionary to broadcast. Will be serialized to JSON.
-        
+
         Example:
             >>> await ws_server.broadcast({
             ...     'event_type': 'job.status_changed',
             ...     'data': {'job_id': '123', 'status': 'running'}
             ... })
         """
-        # Convert message to JSON
-        message_json = json.dumps(message)
+        async with self._lock:
+            disconnected = []
+            
+            for connection in self.connections:
+                if not await self._send_to_connection(connection, message):
+                    disconnected.append(connection)
+            
+            # Remove disconnected clients
+            for conn in disconnected:
+                self.connections.remove(conn)
+                logger.info(f"Removed disconnected WebSocket for user {conn.user.username}")
+
+    async def broadcast_to_user(self, username: str, message: dict) -> None:
+        """Broadcast a message to a specific user's connections.
+
+        Args:
+            username: Username to send message to
+            message: The message dictionary to broadcast
+        """
+        async with self._lock:
+            for connection in self.connections:
+                if connection.user.username == username:
+                    await self._send_to_connection(connection, message)
+
+    async def _send_to_connection(
+        self,
+        connection: WebSocketConnection,
+        message: dict
+    ) -> bool:
+        """Send message to a single connection.
+
+        Args:
+            connection: The connection to send to
+            message: The message to send
+
+        Returns:
+            True if sent successfully, False if connection failed
+        """
+        try:
+            message_json = json.dumps(message)
+            await connection.websocket.send_text(message_json)
+            return True
+        except Exception as e:
+            logger.debug(f"Failed to send to {connection.user.username}: {e}")
+            return False
+
+    def setup_listeners(self) -> None:
+        """Set up event listeners to broadcast events to WebSocket clients."""
         
-        # Send to all connected clients
-        disconnected = []
-        for connection in self.connections:
-            try:
-                await connection.send_text(message_json)
-            except Exception:
-                # Mark connection for removal if send fails
-                disconnected.append(connection)
+        def on_event(event_data: dict):
+            """Broadcast event to all connected clients."""
+            asyncio.create_task(self.broadcast(event_data))
         
-        # Remove disconnected clients
-        for connection in disconnected:
-            await self.disconnect(connection)
+        # Listen for all events
+        self.event_emitter.on('*', on_event)
+        logger.info("WebSocket event listeners configured")
     
     def setup_listeners(self) -> None:
         """Setup event listeners to broadcast events.

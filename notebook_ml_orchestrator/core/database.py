@@ -35,6 +35,7 @@ class DatabaseManager:
         self._local = threading.local()
         self._ensure_database_exists()
         self._create_tables()
+        self._migrate_schema()
     
     def _ensure_database_exists(self):
         """Ensure database file and directory exist."""
@@ -86,6 +87,8 @@ class DatabaseManager:
                     status TEXT NOT NULL,
                     backend_id TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    timeout_minutes INTEGER DEFAULT 60,
+                    resource_limits TEXT DEFAULT '{}',
                     started_at TIMESTAMP,
                     completed_at TIMESTAMP,
                     result TEXT,
@@ -169,6 +172,22 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow_id ON workflow_executions(workflow_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_batch_jobs_user_id ON batch_jobs(user_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_batch_jobs_status ON batch_jobs(status)")
+
+    def _migrate_schema(self):
+        """Apply forward-compatible schema migrations for existing databases."""
+        required_job_columns = {
+            'timeout_minutes': "ALTER TABLE jobs ADD COLUMN timeout_minutes INTEGER DEFAULT 60",
+            'resource_limits': "ALTER TABLE jobs ADD COLUMN resource_limits TEXT DEFAULT '{}'",
+        }
+
+        with self.get_cursor() as cursor:
+            cursor.execute("PRAGMA table_info(jobs)")
+            existing_columns = {row['name'] for row in cursor.fetchall()}
+
+            for column_name, alter_sql in required_job_columns.items():
+                if column_name not in existing_columns:
+                    cursor.execute(alter_sql)
+                    logger.info(f"Applied schema migration: added jobs.{column_name}")
     
     def insert_job(self, job: Job) -> bool:
         """
@@ -185,13 +204,15 @@ class DatabaseManager:
                 cursor.execute("""
                     INSERT INTO jobs (
                         id, user_id, template_name, inputs, status, backend_id,
-                        created_at, started_at, completed_at, result, error,
-                        retry_count, priority, metadata
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        created_at, timeout_minutes, resource_limits, started_at,
+                        completed_at, result, error, retry_count, priority, metadata
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     job.id, job.user_id, job.template_name, json.dumps(job.inputs),
-                    job.status.value, job.backend_id, 
+                    job.status.value, job.backend_id,
                     job.created_at.isoformat() if job.created_at else None,
+                    job.timeout_minutes,
+                    json.dumps(job.resource_limits),
                     job.started_at.isoformat() if job.started_at else None,
                     job.completed_at.isoformat() if job.completed_at else None,
                     json.dumps(job.result.__dict__) if job.result else None,
@@ -216,12 +237,12 @@ class DatabaseManager:
             with self.get_cursor() as cursor:
                 cursor.execute("""
                     UPDATE jobs SET
-                        status = ?, backend_id = ?, 
+                        status = ?, backend_id = ?, timeout_minutes = ?, resource_limits = ?,
                         started_at = ?, completed_at = ?,
                         result = ?, error = ?, retry_count = ?, metadata = ?
                     WHERE id = ?
                 """, (
-                    job.status.value, job.backend_id, 
+                    job.status.value, job.backend_id, job.timeout_minutes, json.dumps(job.resource_limits),
                     job.started_at.isoformat() if job.started_at else None,
                     job.completed_at.isoformat() if job.completed_at else None,
                     json.dumps(job.result.__dict__) if job.result else None,
@@ -305,6 +326,8 @@ class DatabaseManager:
         """Convert database row to Job instance."""
         from .models import JobResult  # Import here to avoid circular imports
         
+        available_columns = set(row.keys())
+
         job = Job(
             id=row['id'],
             user_id=row['user_id'],
@@ -313,6 +336,11 @@ class DatabaseManager:
             status=JobStatus(row['status']),
             backend_id=row['backend_id'],
             created_at=datetime.fromisoformat(row['created_at']) if row['created_at'] else datetime.now(),
+            timeout_minutes=row['timeout_minutes'] if 'timeout_minutes' in available_columns and row['timeout_minutes'] is not None else 60,
+            resource_limits=json.loads(row['resource_limits']) if 'resource_limits' in available_columns and row['resource_limits'] else {
+                'max_memory_mb': 4096,
+                'max_cpu_cores': 2,
+            },
             started_at=datetime.fromisoformat(row['started_at']) if row['started_at'] else None,
             completed_at=datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
             error=row['error'],
@@ -338,12 +366,13 @@ class DatabaseManager:
             Number of jobs deleted
         """
         try:
+            safe_days_old = max(1, int(days_old))
             with self.get_cursor() as cursor:
                 cursor.execute("""
                     DELETE FROM jobs 
                     WHERE status IN ('completed', 'failed', 'cancelled') 
-                    AND datetime(created_at) < datetime('now', '-{} days')
-                """.format(days_old))
+                    AND datetime(created_at) < datetime('now', ?)
+                """, (f"-{safe_days_old} days",))
                 return cursor.rowcount
         except Exception as e:
             logger.error(f"Failed to cleanup old jobs: {e}")

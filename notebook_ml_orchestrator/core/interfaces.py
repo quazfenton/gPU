@@ -7,7 +7,7 @@ providing a consistent API across the entire system.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -28,6 +28,11 @@ class Job:
     status: JobStatus = JobStatus.QUEUED
     backend_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
+    timeout_minutes: int = 60
+    resource_limits: Dict[str, Any] = field(default_factory=lambda: {
+        'max_memory_mb': 4096,
+        'max_cpu_cores': 2,
+    })
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     result: Optional[JobResult] = None
@@ -35,6 +40,21 @@ class Job:
     retry_count: int = 0
     priority: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def is_expired(self) -> bool:
+        """Check if job has exceeded its configured timeout."""
+        if self.status != JobStatus.RUNNING or not self.started_at:
+            return False
+        elapsed = datetime.now() - self.started_at
+        return elapsed > timedelta(minutes=self.timeout_minutes)
+
+    def remaining_time(self) -> Optional[timedelta]:
+        """Get remaining time before timeout for running jobs."""
+        if self.status != JobStatus.RUNNING or not self.started_at:
+            return None
+        elapsed = datetime.now() - self.started_at
+        remaining = timedelta(minutes=self.timeout_minutes) - elapsed
+        return max(timedelta(0), remaining)
 
 
 @dataclass
@@ -240,6 +260,16 @@ class JobQueueInterface(ABC):
     @abstractmethod
     def get_job_history(self, user_id: str, limit: int = 100) -> List[Job]:
         """Retrieve job history for a user."""
+        pass
+
+    @abstractmethod
+    def cancel_job(self, job_id: str, reason: str = "") -> bool:
+        """Cancel a running or queued job."""
+        pass
+
+    @abstractmethod
+    def get_job_status(self, job_id: str) -> Optional[JobStatus]:
+        """Get current status of a job."""
         pass
 
 

@@ -5,8 +5,11 @@ This module provides:
 - Configurable authentication providers
 - Session management with timeout
 - Role-based access control (RBAC)
+- Rate limiting for authentication endpoints
 
 Requirements validated: 8.1, 8.2, 8.3, 8.5, 8.6, 8.7
+
+SECURITY ENHANCED: Rate limiting added to prevent brute force attacks.
 """
 
 import time
@@ -16,6 +19,10 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Callable, Dict, Optional, Set
 from uuid import uuid4
+from collections import defaultdict
+import hmac
+
+from gui.rate_limiter import RateLimiter, RateLimitConfig, RateLimitError
 
 
 class Role(Enum):
@@ -125,32 +132,130 @@ class AuthenticationProvider(ABC):
 class SimpleAuthProvider(AuthenticationProvider):
     """Simple in-memory authentication provider for testing/development.
     
+    SECURITY ENHANCED: Rate limiting and account lockout added to prevent brute force attacks.
+
     Stores username/password pairs in memory. Not suitable for production.
     """
-    
-    def __init__(self, users: Optional[Dict[str, tuple[str, Role]]] = None):
+
+    def __init__(
+        self,
+        users: Optional[Dict[str, tuple[str, Role]]] = None,
+        max_failed_attempts: int = 5,
+        lockout_duration_minutes: int = 30
+    ):
         """Initialize with user credentials.
-        
+
         Args:
             users: Dictionary mapping username to (password, role) tuples
+            max_failed_attempts: Maximum failed login attempts before lockout
+            lockout_duration_minutes: Duration to lock account after max failures
         """
         self.users = users or {}
-    
-    def authenticate(self, username: str, password: str) -> Optional[User]:
+        self.max_failed_attempts = max_failed_attempts
+        self.lockout_duration = timedelta(minutes=lockout_duration_minutes)
+        
+        # Rate limiting for authentication endpoints
+        self.auth_rate_limiter = RateLimiter(RateLimitConfig(
+            requests_per_minute=10,  # Max 10 auth attempts per minute
+            requests_per_hour=60,    # Max 60 auth attempts per hour
+        ))
+        
+        # Track failed attempts per user
+        self._failed_attempts: Dict[str, list] = defaultdict(list)
+        self._locked_accounts: Dict[str, datetime] = {}
+
+    def authenticate(
+        self,
+        username: str,
+        password: str,
+        ip_address: Optional[str] = None
+    ) -> Optional[User]:
         """Authenticate against in-memory user store.
         
+        SECURITY: Rate limiting and account lockout enforced.
+
         Args:
             username: Username to authenticate
             password: Password to validate
-            
+            ip_address: Optional IP address for rate limiting
+
         Returns:
             User object if credentials match, None otherwise
+            
+        Raises:
+            RateLimitError: If rate limit exceeded
+            AuthenticationError: If account locked or credentials invalid
         """
+        client_id = ip_address or username
+        
+        # SECURITY: Check rate limit
+        try:
+            self.auth_rate_limiter.check_rate_limit(client_id)
+        except RateLimitError as e:
+            raise AuthenticationError(
+                f"Too many authentication attempts. Please wait {e.retry_after} seconds."
+            )
+        
+        # SECURITY: Check if account is locked
+        if username in self._locked_accounts:
+            lockout_until = self._locked_accounts[username]
+            if datetime.now() < lockout_until:
+                remaining = (lockout_until - datetime.now()).seconds // 60
+                raise AuthenticationError(
+                    f"Account locked due to multiple failed attempts. Try again in {remaining} minutes."
+                )
+            else:
+                # Lockout expired, remove it
+                del self._locked_accounts[username]
+                self._failed_attempts[username] = []
+        
+        # Validate credentials
         if username in self.users:
             stored_password, role = self.users[username]
-            if stored_password == password:
+            
+            # Use constant-time comparison to prevent timing attacks
+            if hmac.compare_digest(stored_password.encode(), password.encode()):
+                # Success - reset failed attempts
+                self._failed_attempts[username] = []
                 return User(username=username, role=role)
-        return None
+        
+        # Failed attempt - track it
+        self._failed_attempts[username].append(datetime.now())
+        
+        # Check if max attempts exceeded
+        if len(self._failed_attempts[username]) >= self.max_failed_attempts:
+            self._locked_accounts[username] = datetime.now() + self.lockout_duration
+            raise AuthenticationError(
+                f"Account locked due to {self.max_failed_attempts} failed attempts. "
+                f"Try again in {self.lockout_duration.seconds // 60} minutes."
+            )
+        
+        raise AuthenticationError("Invalid credentials")
+    
+    def get_failed_attempts(self, username: str) -> int:
+        """Get number of failed attempts for a user."""
+        return len(self._failed_attempts.get(username, []))
+    
+    def is_locked(self, username: str) -> bool:
+        """Check if account is locked."""
+        if username not in self._locked_accounts:
+            return False
+        
+        if datetime.now() >= self._locked_accounts[username]:
+            # Lockout expired
+            del self._locked_accounts[username]
+            self._failed_attempts[username] = []
+            return False
+        
+        return True
+    
+    def unlock_account(self, username: str) -> bool:
+        """Manually unlock a locked account."""
+        if username in self._locked_accounts:
+            del self._locked_accounts[username]
+            self._failed_attempts[username] = []
+            return True
+        return False
 
 
 class SessionManager:

@@ -3,6 +3,8 @@ Job service for GUI interface.
 
 This module provides business logic for job submission, monitoring, and management
 through the GUI interface.
+
+SECURITY ENHANCED: All inputs are sanitized to prevent XSS and injection attacks.
 """
 
 from typing import Any, Dict, List, Optional
@@ -11,6 +13,7 @@ from datetime import datetime
 from notebook_ml_orchestrator.core.interfaces import Job, JobQueueInterface, BackendRouterInterface
 from notebook_ml_orchestrator.core.models import JobStatus, JobResult
 from notebook_ml_orchestrator.core.logging_config import LoggerMixin
+from notebook_ml_orchestrator.security.xss_prevention import ContentSanitizer
 from gui.error_handling import (
     ErrorResponse,
     format_validation_error,
@@ -48,6 +51,8 @@ class JobService(LoggerMixin):
         """
         Submit a job and return job ID.
         
+        SECURITY ENHANCED: All inputs are sanitized to prevent XSS and injection attacks.
+
         Args:
             template_name: Name of the template to execute
             inputs: Dictionary of input parameters
@@ -56,15 +61,19 @@ class JobService(LoggerMixin):
             priority: Job priority (higher = more important)
             routing_strategy: Routing strategy for automatic backend selection
                             ("cost-optimized", "round-robin", "least-loaded")
-            
+
         Returns:
             Job ID
-            
+
         Raises:
             ValueError: If template_name or inputs are invalid
             Exception: If job submission fails
         """
+        # SECURITY: Initialize sanitizer
+        sanitizer = ContentSanitizer()
+        
         try:
+            # SECURITY: Validate and sanitize template_name
             if not template_name:
                 error = format_validation_error(
                     "template_name",
@@ -73,6 +82,10 @@ class JobService(LoggerMixin):
                 self.logger.error(f"Validation error: {error.message}")
                 raise ValueError(error.message)
             
+            # SECURITY: Sanitize template name (prevent XSS in template names)
+            template_name = sanitizer.sanitize_identifier(template_name, "Template name")
+
+            # SECURITY: Validate and sanitize inputs
             if inputs is None:
                 error = format_validation_error(
                     "inputs",
@@ -81,28 +94,44 @@ class JobService(LoggerMixin):
                 self.logger.error(f"Validation error: {error.message}")
                 raise ValueError(error.message)
             
-            # Create job instance
+            # SECURITY: Sanitize all string inputs to prevent XSS
+            try:
+                sanitized_inputs = sanitizer.sanitize_dict(inputs)
+            except ValueError as e:
+                error = format_validation_error(
+                    "inputs",
+                    f"Invalid input data: {str(e)}"
+                )
+                self.logger.error(f"Input sanitization failed: {error.message}")
+                raise ValueError(error.message)
+
+            # SECURITY: Sanitize user_id and backend
+            user_id = sanitizer.sanitize_identifier(user_id, "User ID")
+            if backend:
+                backend = sanitizer.sanitize_identifier(backend, "Backend ID")
+
+            # Create job instance with sanitized inputs
             job = Job(
                 user_id=user_id,
                 template_name=template_name,
-                inputs=inputs,
+                inputs=sanitized_inputs,  # Use sanitized inputs
                 priority=priority,
-                backend_id=backend,  # Set backend_id if explicitly specified
+                backend_id=backend,
                 status=JobStatus.QUEUED,
                 created_at=datetime.now(),
-                metadata={"routing_strategy": routing_strategy}  # Store routing strategy in metadata
+                metadata={"routing_strategy": routing_strategy}
             )
-            
+
             # Submit to job queue
             job_id = self.job_queue.submit_job(job)
-            
+
             self.logger.info(
                 f"Job submitted: job_id={job_id}, template={template_name}, "
                 f"backend={backend or 'auto'}, routing_strategy={routing_strategy}, user={user_id}"
             )
-            
+
             return job_id
-            
+
         except ValueError:
             # Re-raise validation errors
             raise

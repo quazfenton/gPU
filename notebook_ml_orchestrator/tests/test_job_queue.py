@@ -59,6 +59,29 @@ class TestRetryPolicy:
         assert policy.get_retry_delay(10) == 10.0  # Capped at max_delay
 
 
+class TestJobTimeoutHelpers:
+    """Test Job timeout helper methods."""
+
+    def test_is_expired_for_running_job(self):
+        job = Job(id="timeout-test", user_id="user", template_name="template", inputs={})
+        job.status = JobStatus.RUNNING
+        job.timeout_minutes = 5
+        job.started_at = datetime.now() - timedelta(minutes=10)
+
+        assert job.is_expired() is True
+
+    def test_remaining_time_for_running_job(self):
+        job = Job(id="remaining-test", user_id="user", template_name="template", inputs={})
+        job.status = JobStatus.RUNNING
+        job.timeout_minutes = 60
+        job.started_at = datetime.now() - timedelta(minutes=30)
+
+        remaining = job.remaining_time()
+        assert remaining is not None
+        assert remaining <= timedelta(minutes=30)
+        assert remaining >= timedelta(minutes=29)
+
+
 class TestJobStateManager:
     """Test JobStateManager functionality."""
     
@@ -248,6 +271,25 @@ class TestJobQueueManager:
         assert cancelled_job.status == JobStatus.CANCELLED
         assert cancelled_job.completed_at is not None
     
+    def test_cancel_job_with_reason(self, job_queue, sample_job):
+        """Test job cancellation with cancellation reason."""
+        job_queue.submit_job(sample_job)
+
+        success = job_queue.cancel_job(sample_job.id, reason="user requested cancellation")
+        assert success is True
+
+        cancelled_job = job_queue.get_job(sample_job.id)
+        assert cancelled_job.metadata.get("cancel_reason") == "user requested cancellation"
+
+    def test_get_job_status(self, job_queue, sample_job):
+        """Test retrieving current job status."""
+        job_queue.submit_job(sample_job)
+
+        assert job_queue.get_job_status(sample_job.id) == JobStatus.QUEUED
+
+        job_queue.update_job_status(sample_job.id, JobStatus.RUNNING)
+        assert job_queue.get_job_status(sample_job.id) == JobStatus.RUNNING
+
     def test_cancel_completed_job(self, job_queue, sample_job):
         """Test cancelling already completed job."""
         # Submit and complete job

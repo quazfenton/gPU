@@ -268,6 +268,11 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
             Job instance or None if not found
         """
         return self.db.get_job(job_id)
+
+    def get_job_status(self, job_id: str) -> Optional[JobStatus]:
+        """Get current status of a job."""
+        job = self.db.get_job(job_id)
+        return job.status if job else None
     
     def get_job_history(self, user_id: str, limit: int = 100) -> List[Job]:
         """
@@ -282,12 +287,13 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
         """
         return self.db.get_user_jobs(user_id, limit)
     
-    def cancel_job(self, job_id: str) -> bool:
+    def cancel_job(self, job_id: str, reason: str = "") -> bool:
         """
         Cancel a job.
         
         Args:
             job_id: Job ID to cancel
+            reason: Optional cancellation reason
             
         Returns:
             True if successful, False otherwise
@@ -299,10 +305,12 @@ class JobQueueManager(JobQueueInterface, LoggerMixin):
                     return False
                 
                 if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
-                    return False  # Cannot cancel finished jobs
+                    return False
                 
                 job.status = JobStatus.CANCELLED
                 job.completed_at = datetime.now()
+                if reason:
+                    job.metadata['cancel_reason'] = reason
                 
                 success = self.db.update_job(job)
                 if success:

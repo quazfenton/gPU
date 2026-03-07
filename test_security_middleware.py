@@ -115,7 +115,7 @@ try:
     # Simulate multiple requests
     for i in range(5):
         allowed, _ = middleware.check_rate_limit('test_user_2')
-    print(f"[OK] Multiple rate limit checks passed")
+    print("[OK] Multiple rate limit checks passed")
     
 except Exception as e:
     print(f"[FAIL] Rate limiting test failed: {e}")
@@ -168,7 +168,7 @@ try:
     }
     sanitized_nested = middleware.sanitize_input(nested_input, 'nested')
     assert '<script>' not in str(sanitized_nested)
-    print(f"[OK] Nested structure sanitization works")
+    print("[OK] Nested structure sanitization works")
     
 except Exception as e:
     print(f"[FAIL] Input sanitization test failed: {e}")

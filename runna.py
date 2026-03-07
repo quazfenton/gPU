@@ -17,7 +17,6 @@ import zipfile
 import subprocess
 import time
 from pathlib import Path
-from urllib.parse import urlparse
 
 # Configure logging
 logging.basicConfig(

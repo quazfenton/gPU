@@ -13,7 +13,6 @@ import os
 import sys
 import tempfile
 import io
-from datetime import datetime, timedelta
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -38,7 +37,7 @@ print("-" * 70)
 
 try:
     from notebook_ml_orchestrator.security.credential_store import (
-        CredentialStore, CredentialEncryptionError
+        CredentialStore
     )
     
     # Create temporary directory for test credentials
@@ -66,7 +65,7 @@ try:
         store.set_credential('kaggle', 'username', 'testuser')
         store.set_credential('kaggle', 'key', 'test-kaggle-key')
         
-        print(f"✓ Stored 5 credentials")
+        print("✓ Stored 5 credentials")
         
         # Test retrieving credentials
         modal_token_id = store.get_credential('modal', 'token_id')
@@ -88,7 +87,7 @@ try:
         store.rotate_credential('modal', 'token_id', 'new-modal-token-id')
         new_token_id = store.get_credential('modal', 'token_id')
         assert new_token_id == 'new-modal-token-id', "Rotation failed!"
-        print(f"✓ Credential rotated successfully")
+        print("✓ Credential rotated successfully")
         
         # Test stats
         stats = store.get_stats()
@@ -107,12 +106,12 @@ try:
         )
         loaded_token = store2.get_credential('modal', 'token_id')
         assert loaded_token == 'new-modal-token-id', "Load failed!"
-        print(f"✓ Credentials loaded successfully from file")
+        print("✓ Credentials loaded successfully from file")
         
         # Test deletion
         store.delete_credential('kaggle', 'key')
         assert store.get_credential('kaggle', 'key') is None
-        print(f"✓ Credential deleted successfully")
+        print("✓ Credential deleted successfully")
         
         print("\n✅ Credential Store tests PASSED")
 
@@ -128,12 +127,12 @@ print("-" * 70)
 
 try:
     from notebook_ml_orchestrator.security.auth_manager import (
-        AuthManager, AuthenticationError, TokenValidationError, Role
+        AuthManager, AuthenticationError, Role
     )
     
     # Initialize auth manager
     auth = AuthManager()
-    print(f"✓ AuthManager initialized")
+    print("✓ AuthManager initialized")
     print(f"  - Access token expiry: {auth.access_token_expiry}")
     print(f"  - Refresh token expiry: {auth.refresh_token_expiry}")
 
@@ -141,13 +140,13 @@ try:
     admin = auth.register_user('admin', 'admin@example.com', 'Admin123!', Role.ADMIN)
     user = auth.register_user('testuser', 'user@example.com', 'User123!', Role.USER)
     viewer = auth.register_user('viewer', 'viewer@example.com', 'Viewer123!', Role.VIEWER)
-    print(f"[OK] Registered 3 test users")
+    print("[OK] Registered 3 test users")
 
     # Test authentication
     tokens = auth.authenticate('admin', 'Admin123!')
     assert 'access_token' in tokens
     assert 'refresh_token' in tokens
-    print(f"[OK] Authentication successful for admin")
+    print("[OK] Authentication successful for admin")
     print(f"  - Access token: {tokens['access_token'][:50]}...")
 
     # Test token validation
@@ -155,18 +154,18 @@ try:
     assert payload.user_id == admin.id
     assert payload.username == 'admin'
     assert payload.role == 'admin'
-    print(f"[OK] Token validation successful")
+    print("[OK] Token validation successful")
     print(f"  - User: {payload.username}, Role: {payload.role}")
     
     # Test token refresh
     new_tokens = auth.refresh_access_token(tokens['refresh_token'])
     assert 'access_token' in new_tokens
-    print(f"✓ Token refresh successful")
+    print("✓ Token refresh successful")
     
     # Test failed authentication
     try:
         auth.authenticate('admin', 'WrongPass123!')
-        print(f"[FAIL] Should have raised AuthenticationError")
+        print("[FAIL] Should have raised AuthenticationError")
         sys.exit(1)
     except AuthenticationError as e:
         print(f"[OK] Failed authentication handled correctly: {e.error_code}")
@@ -179,7 +178,7 @@ try:
     # Test API key authentication
     api_user = auth.authenticate_api_key(api_key)
     assert api_user.username == 'admin'
-    print(f"✓ API key authentication successful")
+    print("✓ API key authentication successful")
     
     # Test session management
     session = auth.create_session(admin, ip_address='192.168.1.1')
@@ -189,13 +188,13 @@ try:
     # Test session retrieval
     retrieved_session = auth.get_session(session.id)
     assert retrieved_session is not None
-    print(f"✓ Session retrieved successfully")
+    print("✓ Session retrieved successfully")
     
     # Test session invalidation
     auth.invalidate_session(session.id)
     invalid_session = auth.get_session(session.id)
     assert invalid_session is None
-    print(f"✓ Session invalidated successfully")
+    print("✓ Session invalidated successfully")
     
     # Test user listing
     users = auth.list_users()
@@ -220,7 +219,7 @@ print("-" * 70)
 
 try:
     from notebook_ml_orchestrator.security.security_logger import (
-        SecurityLogger, SecurityEventType, get_security_logger
+        SecurityLogger
     )
     
     # Create temporary log file
@@ -232,29 +231,29 @@ try:
         log_file=log_file,
         include_console=False
     )
-    print(f"✓ SecurityLogger initialized")
+    print("✓ SecurityLogger initialized")
     
     # Test logging various events
     sec_logger.log_auth_success('admin', ip_address='192.168.1.1')
-    print(f"✓ Logged auth success")
+    print("✓ Logged auth success")
     
     sec_logger.log_auth_failure('unknown', ip_address='192.168.1.100', reason='invalid_credentials')
-    print(f"✓ Logged auth failure")
+    print("✓ Logged auth failure")
     
     sec_logger.log_authz_failure('viewer', 'admin_panel', 'ADMIN', 'VIEWER')
-    print(f"✓ Logged authz failure")
+    print("✓ Logged authz failure")
     
     sec_logger.log_rate_limit_exceeded('user123', '/api/jobs', 100)
-    print(f"✓ Logged rate limit exceeded")
+    print("✓ Logged rate limit exceeded")
     
     sec_logger.log_sql_injection_attempt("'; DROP TABLE users; --", ip_address='10.0.0.1')
-    print(f"✓ Logged SQL injection attempt")
+    print("✓ Logged SQL injection attempt")
     
     sec_logger.log_xss_attempt('<script>alert("XSS")</script>', ip_address='10.0.0.2')
-    print(f"✓ Logged XSS attempt")
+    print("✓ Logged XSS attempt")
     
     sec_logger.log_credential_access('modal', 'token_id', 'admin')
-    print(f"✓ Logged credential access")
+    print("✓ Logged credential access")
     
     # Test stats
     stats = sec_logger.get_stats()
@@ -291,13 +290,13 @@ print("-" * 70)
 try:
     from notebook_ml_orchestrator.security.xss_prevention import (
         ContentSanitizer, CSPHeaderGenerator,
-        escape_html, sanitize_html, detect_xss, is_safe_url,
+        escape_html, detect_xss, is_safe_url,
         get_security_headers
     )
     
     # Initialize sanitizer
     sanitizer = ContentSanitizer()
-    print(f"✓ ContentSanitizer initialized")
+    print("✓ ContentSanitizer initialized")
     print(f"  - Allowed tags: {sanitizer.allowed_tags}")
     
     # Test HTML escaping

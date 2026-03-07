@@ -178,10 +178,7 @@ def test_input_validation():
     print("\n=== Testing Input Validation ===\n")
     
     from notebook_ml_orchestrator.orchestrator import (
-        Orchestrator,
-        MAX_USER_ID_LENGTH,
-        MAX_INPUT_SIZE_BYTES,
-        VALID_ROUTING_STRATEGIES
+        Orchestrator
     )
     from notebook_ml_orchestrator.core.exceptions import JobValidationError
     

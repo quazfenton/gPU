@@ -4,7 +4,6 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 import logging
 import os
-import requests
 from kaggle.api.kaggle_api_extended import KaggleApi
 import kagglehub
 from huggingface_hub import hf_hub_download

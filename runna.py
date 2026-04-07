@@ -860,7 +860,7 @@ def download_remote_notebook(url):
             # For some URLs that require special handling
             if "drive.google.com" in url or "docs.google.com" in url:
                 return download_google_drive_file(url)
-        except:
+        except Exception:
             pass  # Ignore errors from alternative download method
         return None
 
@@ -2094,7 +2094,7 @@ def deploy_to_modal(notebook_dir, opts: dict | None = None):
             subprocess.run(
                 ["modal", "token", "set", "--help"], check=True, capture_output=True
             )
-        except:
+        except Exception:
             logger.warning("Modal authentication may be required. Run: modal token new")
 
         # Deploy using modal CLI

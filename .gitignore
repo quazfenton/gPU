@@ -2,3 +2,5 @@
 env
 venv
 .kaggle
+__pycache__/
+*.pyc

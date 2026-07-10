@@ -33,17 +33,18 @@ Kaggle Notebook Automation & Deployment Tool. The main CLI is **`runna.py`** (~3
 | Command | Usage | Notes |
 |---|---|---|
 | `list` | `runna.py list [--user USER] [--search TERM]` | Lists kernels via Kaggle API |
-| `pull` | `runna.py pull USER/NOTEBOOK [--dest DIR]` | Downloads .ipynb from Kaggle |
+| `pull` | `runna.py pull USER/NOTEBOOK [--dest DIR]` | Downloads .ipynb from Kaggle; also accepts Kaggle URLs |
 | `push` | `runna.py push PATH` | Uploads notebook to Kaggle |
-| `create` | `runna.py create [INPUT]` | Creates kernel from local file or interactive |
-| `run` | `runna.py run [INPUT] [--deploy]` | Pull+push+run; `--deploy` triggers GCP deploy after run |
+| `create` | `runna.py create [INPUT]` | Creates kernel from local file, remote URL, or blank if no input |
+| `run` | `runna.py run [INPUT] [--deploy]` | Pull+push+run; interactive selection if no input; `--deploy` triggers GCP deploy after run |
+| *(shortcut)* | `runna.py --validate` | Alias for `doctor` |
 
 ### Deployment
 
 | Command | Usage | Notes |
 |---|---|---|
 | `deploy` | `runna.py deploy PATH --gcp-project ID [opts]` | Deploy to GCP Cloud Functions |
-| `deploy-aws` | `runna.py deploy-aws PATH --role-arn ARN [opts]` | Deploy to AWS Lambda |
+| `deploy-aws` | `runna.py deploy-aws PATH --role-arn ARN [opts]` | Deploy to AWS Lambda; also supports `--function-name`, `--region`, `--memory`, `--timeout`, `--save-name` |
 | `deploy-modal` | `runna.py deploy-modal PATH [--gpu TYPE] [--secrets ...] [--timeout N]` | Deploy to Modal.com |
 | `package-aws` | `runna.py package-aws PATH` | Package as Lambda zip (no deploy) |
 | `serve-local` | `runna.py serve-local PATH [--run] [--port 8080]` | Package for local testing; `--run` starts functions-framework |
@@ -87,7 +88,7 @@ Built-in apps: `image-classifier` (T4), `text-generator` (T4), `llm-chat` (A10G)
 | Command | Usage | Notes |
 |---|---|---|
 | `endpoints` | `runna.py endpoints` | List saved endpoints from `.kaggle_state/endpoints.json` |
-| `call` | `runna.py call NAME_OR_URL --json '{}' [--method POST]` | Send JSON to endpoint |
+| `call` | `runna.py call NAME_OR_URL --json '{}' [--method POST] [--json-file FILE]` | Send JSON to endpoint (inline or from file) |
 | `send` | `runna.py send ENDPOINT TEXT [--field FIELD]` | Send text; default field is `"text"` |
 | `chat` | `runna.py chat ENDPOINT [--field FIELD]` | Interactive chat loop (Ctrl+C to exit) |
 
@@ -95,8 +96,8 @@ Built-in apps: `image-classifier` (T4), `text-generator` (T4), `llm-chat` (A10G)
 
 | Command | Usage | Notes |
 |---|---|---|
-| `batch` | `runna.py batch FILE --operation {download,deploy,run} [--output-dir DIR]` | Process list of notebooks |
-| `preprocess` | `runna.py preprocess PATH [--clean-metadata] [--remove-outputs] [--scan-security] [--optimize-imports]` | Clean notebooks |
+| `batch` | `runna.py batch FILE --operation {download,deploy,run} [--output-dir DIR] [--parallel]` | Process list of notebooks; `--parallel` for concurrent execution |
+| `preprocess` | `runna.py preprocess PATH [--clean-metadata] [--remove-outputs] [--scan-security] [--optimize-imports] [--output PATH]` | Clean notebooks; `--output` writes to a different file |
 | `doctor` | `runna.py doctor` | Validate Python, kaggle pkg, credentials, API connection |
 
 ---
@@ -186,6 +187,24 @@ python3 runna.py doctor
 
 ---
 
+## Input Type Resolution (`determine_input_type`)
+
+The `create` and `run` commands auto-detect input type:
+
+| Input | Detected As | Behavior |
+|---|---|---|
+| `username/kernel-name` | `kaggle_ref` | Pull from Kaggle |
+| `https://kaggle.com/code/...` | `kaggle_url` | Parse URL, pull from Kaggle |
+| `https://github.com/...ipynb` | `remote_notebook` | Download from GitHub (auto-converts to raw URL) |
+| `https://gist.github.com/...` | `remote_notebook` | Download from GitHub Gist |
+| `https://gitlab.com/...` | `remote_notebook` | Download from GitLab (raw conversion) |
+| `https://bitbucket.org/...` | `remote_notebook` | Download from Bitbucket (raw conversion) |
+| `https://drive.google.com/...` | `remote_notebook` | Download from Google Drive |
+| `./local/path` or `file.ipynb` | `local_file` / `local_dir` | Use directly |
+| *(no input to `run`)* | — | Interactive selection from popular kernels |
+
+---
+
 ## Notebook Convention for Deployment
 
 Notebooks intended for deployment should define a `process_request(data)` function:
@@ -215,12 +234,21 @@ The generated handler (`deploy/main.py` or `modal-deploy/modal_app.py`) tries:
 
 These are merged into `deploy/requirements.txt` alongside base deps (flask, requests, functions-framework).
 
+## Jupyter Magic Auto-Cleaning
+
+During deployment, `clean_jupyter_magic_commands()` automatically strips IPython-specific syntax that would cause `SyntaxError` in production:
+- Cell magic (`%%writefile`, `%%time`, `%%bash`)
+- Line magic (`%matplotlib`, `%load_ext`, `%pip`)
+- `get_ipython()` calls
+- IPython cell markers (`# In[1]:`)
+
+This is applied in `convert_notebook_to_script()` and fallback extraction paths.
+
 ---
 
 ## Known Issues (from `fail.md`)
 
 - **Kernel push 409 Conflict**: Title-to-ID slug mismatch causes `kaggle kernels push` to fail with "Your kernel title does not resolve to the specified id". The auto-generated metadata may produce incompatible slugs.
-- **Remote URL download not implemented**: `runna.py create https://github.com/...ipynb` does not currently download from GitHub.
 - **`.env` loading in venv**: `python-dotenv` may not find the `.env` file depending on venv configuration; environment variables or `~/.kaggle/kaggle.json` are more reliable.
 - **`create` command namespace error**: Some `create` code paths hit `'Namespace' object has no attribute 'path'`.
 
@@ -246,6 +274,14 @@ These are merged into `deploy/requirements.txt` alongside base deps (flask, requ
 | A10G | 1.10 | Balanced |
 | A100 | 4.00 | Training |
 
+## Free Tier Reference
+
+| Platform | Free Allowance |
+|---|---|
+| GCP Cloud Functions | 2M requests/month |
+| AWS Lambda | 1M requests/month |
+| Modal.com | $30 free credit/month |
+
 ---
 
 ## Test Scripts
@@ -260,6 +296,5 @@ These are merged into `deploy/requirements.txt` alongside base deps (flask, requ
 
 ## TODO
 
-- Remote notebook download from GitHub/GitHub URLs (currently unimplemented)
 - Automated `run → deploy` pipeline (pull, push, wait for complete, then deploy — currently manual)
 - Fix kernel-metadata.json slug generation to avoid 409 push conflicts

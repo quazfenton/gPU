@@ -51,6 +51,7 @@ Full subcommand list (defined in `runna.py:main()` around line 2730):
 | `call <name_or_url> [--method] [--json] [--json-file]` | Call an endpoint with JSON |
 | `batch <file> [--operation download\|deploy\|run] [--parallel]` | Batch process notebooks |
 | `preprocess <path> [--clean-metadata] [--remove-outputs] [--scan-security] [--optimize-imports] [--output]` | Clean/secure notebooks |
+| `doctor` | Validate environment (Kaggle CLI, gcloud, credentials) — same as `--validate` |
 
 ### Tests
 
@@ -108,6 +109,9 @@ kernel-metadata.json  # Kaggle kernel metadata
 
 - **Endpoint registry:** `.kaggle_state/endpoints.json` (created at runtime by
   `runna.py`; not in `.gitignore` but is a runtime artifact — do not commit).
+  Endpoints are registered by passing `--save-name <name>` to `run`/`deploy`/
+  `deploy-aws`/`deploy-modal` (`register_endpoint()` in `runna.py`); the saved
+  name is then reused by `endpoints`, `send`, `chat`, and `call`.
 - **App library:** `apps/library.json` + `apps/<name>.py` (committed; managed
   via `app-add`/`app-update`/`app-delete`).
 - **Gitignored:** `.env*`, `env`, `venv`, `.kaggle`.
@@ -132,3 +136,13 @@ Kaggle credentials are resolved in order (see `get_auth()` in `runna.py`):
 
 Cloud providers: `gcloud auth login` + `gcloud config set project <ID>` (GCP),
 `aws configure` (AWS), `modal token new` (Modal).
+
+Provider config env-var fallbacks (used when the matching flag is omitted):
+- **GCP:** `--gcp-project` → `GOOGLE_CLOUD_PROJECT` / `PROJECT_ID`; `--region` →
+  `REGION` (default `us-central1`).
+- **AWS:** `--role-arn` → `AWS_LAMBDA_ROLE_ARN`; `--region` → `AWS_REGION`
+  (default `us-east-1`).
+- **`deploy.sh`** (standalone GCP wrapper): reads `FUNCTION_NAME`,
+  `GOOGLE_CLOUD_PROJECT`/`PROJECT_ID`, `REGION`, and model env vars
+  (`MODEL_SOURCE`, `MODEL_PATH`, `KAGGLE_DATASET`, `KAGGLE_COMPETITION`,
+  `KAGGLE_NOTEBOOK`, `HF_REPO_ID`, `HF_MODEL_FILE`).
